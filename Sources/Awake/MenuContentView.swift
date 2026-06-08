@@ -39,7 +39,18 @@ struct MenuContentView: View {
             // CONCRETE height = min(measured, maxListHeight): renders normally for
             // a few holders, caps + scrolls for many. A plain ScrollView with only
             // .frame(maxHeight:) would collapse to ~0 in the .window MenuBarExtra.
-            boundedAssertionList
+            // Section title for the who's-keeping-awake list (Awake's headline
+            // feature). Kept OUTSIDE the bounded ScrollView so it doesn't scroll
+            // away — and so the measured-height list (bug #13) is untouched.
+            VStack(alignment: .leading, spacing: 4) {
+                if !isListEmpty {
+                    Text("Keeping your Mac awake")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                }
+                boundedAssertionList
+            }
             Divider()
             footer
         }
@@ -79,11 +90,11 @@ struct MenuContentView: View {
     private var statusText: String {
         switch model.iconState {
         case .idle:       return "Your Mac can sleep"
-        case .selfOnly:   return "You're keeping it awake"
-        case .cliOnly:    return "A caffeinate command is keeping it awake"
+        case .selfOnly:   return "You're keeping your Mac awake"
+        case .cliOnly:    return "A command you ran is keeping your Mac awake"
         case .appOnly:    return "An app is keeping your Mac awake"
-        case .selfAndApp: return "You and an app are keeping it awake"
-        case .cliAndApp:  return "A caffeinate command and an app are keeping it awake"
+        case .selfAndApp: return "You and an app are keeping your Mac awake"
+        case .cliAndApp:  return "A command you ran and an app are keeping your Mac awake"
         }
     }
 
@@ -92,9 +103,16 @@ struct MenuContentView: View {
     private var masterToggle: some View {
         Toggle(isOn: Binding(
             get: { model.isActive },
+            // Flip ON from idle starts a hold using the user's Default Duration
+            // (Settings → General; ships as Indefinitely) rather than always
+            // forcing indefinite — and never re-creates an already-running timed
+            // hold. Flip OFF stops.
             set: { newValue in
-                if newValue { model.activate(duration: .indefinite) }
-                else { model.deactivate() }
+                if newValue {
+                    if !model.isActive { model.activate(duration: model.prefs.defaultDuration) }
+                } else {
+                    model.deactivate()
+                }
             }
         )) {
             Text("Keep Awake")
@@ -114,14 +132,14 @@ struct MenuContentView: View {
             get: { model.prefs.ourHoldBlocksDisplay },
             set: { model.setDisplayHold($0) }
         )) {
-            Text("Keep display awake")
+            Text("Keep the display awake")
                 .font(.subheadline)
         }
         // A checkbox, indented under the primary switch, so it reads as a
         // sub-condition of Keep Awake rather than a second equal toggle.
         .toggleStyle(.checkbox)
         .padding(.leading, 16)
-        .help("Also prevent the display from sleeping while Awake is holding.")
+        .help("Also keep the screen on while Awake is keeping your Mac awake.")
     }
 
     // MARK: - Countdown (active-state cluster)
@@ -132,21 +150,45 @@ struct MenuContentView: View {
     @ViewBuilder
     private var countdown: some View {
         if let rem = model.remaining {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Label(hms(rem), systemImage: "timer")
+                        .monospacedDigit()
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Time remaining: \(hms(rem))")
+                    Button("+15 min") {
+                        model.activateCustom(seconds: Int(rem) + 900)
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .accessibilityLabel("Add 15 minutes")
+                    Spacer()
+                    Button("Stop") { model.deactivate() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.small)
+                        .accessibilityLabel("Stop keeping your Mac awake")
+                }
+                if let end = model.endDate {
+                    Text("Until \(end.formatted(.dateTime.hour().minute()))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else if model.isActive {
+            // Indefinite hold: no countdown, but it still needs an inline Stop and
+            // a cue that it's on with no end, so the active state never looks stuck.
             HStack(spacing: 8) {
-                Label(hms(rem), systemImage: "timer")
-                    .monospacedDigit()
+                Label("On indefinitely", systemImage: "infinity")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Button("+15 min") {
-                    model.activateCustom(seconds: Int(rem) + 900)
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
                 Spacer()
                 Button("Stop") { model.deactivate() }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                     .controlSize(.small)
+                    .accessibilityLabel("Stop keeping your Mac awake")
             }
         }
     }
@@ -168,8 +210,13 @@ struct MenuContentView: View {
             HStack(spacing: 6) {
                 durationButton(.fourHours, "4h")
                 durationButton(.eightHours, "8h")
-                Button("Custom…") { showCustom.toggle() }
-                    .buttonStyle(.bordered)
+                Button("Custom…") {
+                    // Reset the "Until" picker to a sensible 1-hour-from-now each
+                    // time the panel opens, so a stale value never shows.
+                    if !showCustom { untilTime = Date().addingTimeInterval(3600) }
+                    showCustom.toggle()
+                }
+                .buttonStyle(.bordered)
                 if !model.isActive {
                     Button("Indefinitely") { model.activate(duration: .indefinite) }
                         .buttonStyle(.bordered)
@@ -183,7 +230,8 @@ struct MenuContentView: View {
                                 .monospacedDigit()
                         }
                         Button("Start") { startCustom() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel("Start, keep awake for \(customMinutes) minutes")
                     }
                     HStack {
                         DatePicker("Until", selection: $untilTime,
@@ -191,6 +239,7 @@ struct MenuContentView: View {
                         Spacer()
                         Button("Start") { startUntil() }
                             .buttonStyle(.bordered)
+                            .accessibilityLabel("Start, keep awake until the chosen time")
                     }
                 }
             }
@@ -198,10 +247,14 @@ struct MenuContentView: View {
     }
 
     private func durationButton(_ duration: TimerDuration, _ label: String) -> some View {
-        Button(label) {
+        let selected = model.activeDuration == duration
+        return Button(label) {
             model.activate(duration: duration)
         }
         .buttonStyle(.bordered)
+        .tint(selected ? Color.accentColor : nil)
+        .accessibilityLabel("Keep awake for \(duration.label)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func startCustom() {
@@ -251,7 +304,7 @@ struct MenuContentView: View {
         // killed. Confirming inline keeps everything inside the popover.
         if confirmKill && hasYou {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Stop \(youCount) caffeinate command\(youCount == 1 ? "" : "s") you started? Apps keeping your Mac awake aren't affected.")
+                Text("Stop \(youCount) command\(youCount == 1 ? "" : "s") you ran in Terminal? Apps keeping your Mac awake aren't affected.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -271,10 +324,11 @@ struct MenuContentView: View {
             Button {
                 confirmKill = true
             } label: {
-                Label("Stop Caffeinate Commands", systemImage: "stop.circle")
+                Label("Stop Terminal Commands", systemImage: "stop.circle")
             }
             .buttonStyle(.bordered)
             .disabled(!hasYou)
+            .help("Stops keep-awake commands you started in Terminal (the macOS caffeinate command). Apps keeping your Mac awake aren't affected.")
         }
     }
 
@@ -346,7 +400,7 @@ struct MenuContentView: View {
     private var emptyStateText: String {
         // If nothing visible but system is hidden, hint at the toggle.
         if !model.prefs.showSystemAssertions {
-            return "Nothing is keeping your Mac awake. (System processes are hidden — enable Show System Assertions in Settings.)"
+            return "Nothing is keeping your Mac awake. (System processes are hidden — turn on Show system processes in Settings.)"
         }
         return "Nothing is keeping your Mac awake."
     }

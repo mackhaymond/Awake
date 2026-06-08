@@ -70,8 +70,8 @@ Render the current palette's states to a PNG: `Awake.app/Contents/MacOS/Awake --
   auto-release timeout (`IOPMAssertion`), so the hold ends even if the app is killed.
 - **Global hotkey** to toggle from anywhere — default **⌃⌥⌘A** — rebindable in Settings
   (Carbon `RegisterEventHotKey`; no Accessibility permission needed).
-- **Stop Caffeinate Commands** — sends SIGTERM to the stray `caffeinate` processes
-  you started.
+- **Stop Terminal Commands** — sends SIGTERM to the stray `caffeinate` processes
+  you started in a terminal.
 - **Launch at login** via `SMAppService` (toggle in Settings).
 - **Categories** — manually override any holder's bucket (Settings → Categories);
   overrides persist and flow into the dropdown and the menu-bar icon.
@@ -121,6 +121,6 @@ Sources/Awake/
   AppPreferences.swift     UserDefaults-backed settings
   Models.swift             value types (PowerAssertion, Bucket, AssertionRow, key combo…)
   MenuContentView.swift    the dropdown UI
-  SettingsView.swift       tabbed settings (General / Shortcut / Appearance / Categories / Advanced / About)
+  SettingsView.swift       tabbed settings (General / Appearance / Categories / Advanced / About)
   DebugDump.swift          --dump / --selftest implementations
 ```

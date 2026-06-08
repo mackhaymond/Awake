@@ -12,6 +12,10 @@ final class AwakeModel {
 
     var isActive: Bool = false
     var remaining: TimeInterval?            // nil = indefinite; drives countdown + icon
+    /// The preset duration the current hold was started from (15m…8h or
+    /// indefinite), so the menu can highlight which duration button is active.
+    /// nil for custom / "until time" / extended holds and when idle.
+    var activeDuration: TimerDuration?
     var buckets: [Bucket: [AssertionRow]] = [:]
 
     /// True when the last hotkey registration failed (combo already in use).
@@ -84,6 +88,11 @@ final class AwakeModel {
     /// instead of drifting by counting ticks.
     private var deadline: Date?
 
+    /// Wall-clock instant the current timed hold ends (nil = indefinite / idle).
+    /// Exposed so the menu can show the absolute end time ("Until 3:45 PM")
+    /// without re-deriving it from `remaining` each tick.
+    var endDate: Date? { deadline }
+
     // MARK: - Lifecycle
 
     func onLaunch() {
@@ -128,6 +137,7 @@ final class AwakeModel {
         guard ok else { return }
 
         isActive = true
+        activeDuration = duration
         if let seconds {
             remaining = TimeInterval(seconds)
             deadline = Date().addingTimeInterval(TimeInterval(seconds))
@@ -147,6 +157,7 @@ final class AwakeModel {
         let ok = controller.activate(reason: "Timed hold (\(label))", seconds: seconds)
         guard ok else { return }
         isActive = true
+        activeDuration = nil   // custom / "until time" / extended: no preset selected
         remaining = TimeInterval(seconds)
         deadline = Date().addingTimeInterval(TimeInterval(seconds))
         refresh()
@@ -156,6 +167,7 @@ final class AwakeModel {
     func deactivate() {
         controller.release()
         isActive = false
+        activeDuration = nil
         remaining = nil
         deadline = nil
         refresh()
@@ -182,7 +194,12 @@ final class AwakeModel {
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         if let rem = remaining {
             let seconds = max(1, Int(rem.rounded()))
+            // Re-creating via activateCustom() nils activeDuration, but the chosen
+            // preset is unchanged here — only the assertion TYPE (display vs system)
+            // is swapped — so preserve the duration-button highlight across it.
+            let saved = activeDuration
             activateCustom(seconds: seconds)
+            activeDuration = saved
         } else {
             activate(duration: .indefinite)
         }
@@ -320,6 +337,7 @@ final class AwakeModel {
             missingSelfHoldStreak = 0
             controller.release()   // tolerant of an already-gone id
             isActive = false
+            activeDuration = nil
             remaining = nil
             deadline = nil
         }
@@ -369,7 +387,7 @@ final class AwakeModel {
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = "Awake session ended"
-            content.body = "Your timed hold expired. Your Mac can sleep again."
+            content.body = "Your timed session ended. Your Mac can sleep again."
             let req = UNNotificationRequest(identifier: UUID().uuidString,
                                             content: content, trigger: nil)
             UNUserNotificationCenter.current().add(req)

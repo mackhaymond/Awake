@@ -37,7 +37,7 @@ struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section {
-                Toggle("Launch at Login", isOn: Binding(
+                Toggle("Launch at login", isOn: Binding(
                     // Show "on" for a successful registration that is still pending
                     // approval (.requiresApproval), so the toggle doesn't snap back
                     // off after the user enables it — the Approve button below then
@@ -56,19 +56,20 @@ struct SettingsView: View {
                         Text(duration.label).tag(duration)
                     }
                 }
-                Toggle("Start Active on Launch", isOn: $model.prefs.activateOnLaunch)
-                    .help("Begin a hold (using the default duration) as soon as Awake launches.")
+                .help("The timer length used when you turn on Keep Awake, and for Start active on launch.")
+                Toggle("Start active on launch", isOn: $model.prefs.activateOnLaunch)
+                    .help("Begin a session (using the default duration) as soon as Awake launches.")
             }
-            Section {
+            Section("While Active") {
                 // Routed through the model so the live assertion is re-created with
                 // the new type immediately — and exactly once even if the menu's
                 // matching toggle is also on screen (shared single side effect).
-                Toggle("Keep the Display Awake When Active", isOn: Binding(
+                Toggle("Keep the display awake", isOn: Binding(
                     get: { model.prefs.ourHoldBlocksDisplay },
                     set: { model.setDisplayHold($0) }
                 ))
-                Toggle("Notify When a Timed Session Ends", isOn: $model.prefs.notifyOnExpiry)
-                    .help("Post a local notification when a timed hold expires.")
+                Toggle("Notify when a timed session ends", isOn: $model.prefs.notifyOnExpiry)
+                    .help("Post a notification when a timed session ends.")
             }
             // Shortcut folded in from its former standalone tab (item 4).
             Section {
@@ -117,7 +118,8 @@ struct SettingsView: View {
             Section("Composition") { compositionControls }
             Section("Colors") {
                 colorRow("This App", binding: bindSelf)
-                colorRow("You (caffeinate)", binding: bindCLI)
+                colorRow("You", binding: bindCLI)
+                    .help("Commands you ran in Terminal via the macOS caffeinate command.")
                 colorRow("Apps", binding: bindApp)
                 idleColorRow
                 HStack {
@@ -163,7 +165,7 @@ struct SettingsView: View {
                                                             layout: layout))
                         .frame(width: 22, height: 22)
                     Text(combo.label)
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -206,7 +208,7 @@ struct SettingsView: View {
                     .font(.system(size: 15))
                     .foregroundStyle(color ?? Color.primary)
                     .frame(width: 26, height: 26)
-                Text(title).font(.system(size: 8)).lineLimit(1).minimumScaleFactor(0.7)
+                Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
@@ -217,25 +219,35 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var compositionControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                ForEach([CompositionPreset.classic, .expandLoneApp, .holderFirst]) { preset in
-                    Button(preset.label) { updateLayout { $0.apply(preset: preset) } }
-                        .buttonStyle(.bordered)
-                        .tint(layout.preset == preset ? .accentColor : nil)
-                        .help(preset.detail)
+            Picker("Preset", selection: Binding(
+                get: { layout.preset },
+                set: { preset in updateLayout { $0.apply(preset: preset) } }
+            )) {
+                // Include .custom so the bound value ALWAYS has a matching tag —
+                // tuning a knob (priority/corner) sets preset == .custom, and a
+                // selection with no tag makes SwiftUI log an "invalid selection"
+                // warning on every re-render. The Custom segment doubles as a
+                // "you've customized" indicator; selecting it is inert
+                // (apply(preset: .custom) is a no-op).
+                ForEach(CompositionPreset.allCases) { preset in
+                    Text(preset.label).tag(preset)
                 }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
             Text(layout.preset.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Divider()
 
-            Toggle("Cup is always the main icon", isOn: Binding(
+            Toggle("Cup is always the main mark", isOn: Binding(
                 get: { layout.anchorCup },
                 set: { v in updateLayout { $0.anchorCup = v } }
             ))
@@ -276,8 +288,12 @@ struct SettingsView: View {
             Spacer()
             Button { movePriority(from: index, by: -1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless).disabled(index == 0)
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+                .accessibilityLabel("Move \(cat.rawValue) up")
             Button { movePriority(from: index, by: 1) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.borderless).disabled(index == IconCategory.allCases.count - 1)
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+                .accessibilityLabel("Move \(cat.rawValue) down")
         }
     }
 
@@ -349,11 +365,12 @@ struct SettingsView: View {
     private var advancedTab: some View {
         Form {
             Section {
-                Toggle("Show System Assertions", isOn: $model.prefs.showSystemAssertions)
+                Toggle("Show system processes", isOn: $model.prefs.showSystemAssertions)
+                    .help("Include macOS background processes (powerd, WindowServer, daemons) in the list.")
                     .onChange(of: model.prefs.showSystemAssertions) { _, _ in
                         model.refresh()
                     }
-                Toggle("Use pmset Reader", isOn: $model.prefs.usePMSetFallback)
+                Toggle("Use pmset reader", isOn: $model.prefs.usePMSetFallback)
                     .help("Read assertions via pmset instead of IOKit. For troubleshooting only.")
                     .onChange(of: model.prefs.usePMSetFallback) { _, _ in
                         model.refresh()
@@ -499,7 +516,7 @@ struct CategoriesSettingsView: View {
         return Form {
             Section {
                 Text("Awake automatically sorts what's keeping your Mac awake into This App, You, Apps, and System. Holders are grouped by their category below — override any one to move it.")
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -561,7 +578,7 @@ struct CategoriesSettingsView: View {
                 Text("Awake").lineLimit(1)
                 if selfActive {
                     Label("Active", systemImage: "circle.fill")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(.green)
                         .labelStyle(.titleAndIcon)
                 } else {
@@ -596,7 +613,7 @@ struct CategoriesSettingsView: View {
                 HStack(spacing: 4) {
                     if e.active {
                         Label("Active", systemImage: "circle.fill")
-                            .font(.system(size: 9))
+                            .font(.caption2)
                             .foregroundStyle(.green)
                             .labelStyle(.titleAndIcon)
                     } else if let lastSeen = e.lastSeen {
@@ -693,10 +710,30 @@ final class RecorderView: NSView {
         didSet {
             onRecordingChange?(isRecording)
             needsDisplay = true
+            // Tell VoiceOver the value changed so it re-reads "Recording…" / the combo.
+            NSAccessibility.post(element: self, notification: .valueChanged)
         }
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    // MARK: Accessibility
+    // A custom NSView is otherwise invisible to VoiceOver (WCAG 4.1.2). Expose it
+    // as a button whose value is the current shortcut / recording state, and let
+    // an accessibility press start recording (mirroring mouseDown).
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { "Keyboard shortcut for Toggle Awake" }
+    override func accessibilityValue() -> Any? {
+        if isRecording { return "Recording — type a shortcut" }
+        return displayString.isEmpty ? "No shortcut set" : displayString
+    }
+    override func accessibilityPerformPress() -> Bool {
+        window?.makeFirstResponder(self)
+        isRecording = true
+        return true
+    }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -748,7 +785,7 @@ final class RecorderView: NSView {
         NSColor.separatorColor.setStroke()
         path.stroke()
 
-        let text = isRecording ? "Type shortcut…" : (displayString.isEmpty ? "Record Shortcut" : displayString)
+        let text = isRecording ? "Type a shortcut…" : (displayString.isEmpty ? "Record shortcut" : displayString)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13),
             .foregroundColor: isRecording ? NSColor.controlAccentColor : NSColor.labelColor,
