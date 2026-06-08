@@ -82,7 +82,8 @@ struct MenuContentView: View {
     private var statusIcon: some View {
         Image(nsImage: StatusIconRenderer.image(holders: model.iconHolders,
                                                 palette: model.prefs.iconPalette,
-                                                layout: model.prefs.iconLayout))
+                                                layout: model.prefs.iconLayout,
+                                                appsIcon: model.appsSlotIcon))
             .frame(width: 22, height: 22)
             .accessibilityHidden(true)
     }

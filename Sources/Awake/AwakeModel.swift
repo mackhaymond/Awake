@@ -58,6 +58,36 @@ final class AwakeModel {
         )
     }
 
+    /// The least-transient (most persistent) app currently holding sleep — the
+    /// one whose real icon represents the Apps slot when "Show the app's icon"
+    /// is on. An indefinite hold (no kernel timeout) beats any timed one; among
+    /// timed holds the longest remaining wins; ties break on the stable
+    /// identityKey so the choice doesn't flicker between 1 Hz refreshes.
+    /// (Computed fresh — NOT buckets[.apps].first, which is sorted shortest-
+    /// remaining-first, i.e. the MOST transient row.)
+    var leastTransientAppRow: AssertionRow? {
+        (buckets[.apps] ?? []).min { l, r in
+            switch (l.timeoutSecsLeft, r.timeoutSecsLeft) {
+            case (nil, nil):          return l.identityKey < r.identityKey
+            case (nil, _?):           return true     // indefinite precedes timed
+            case (_?, nil):           return false
+            case let (a?, b?):
+                if a != b { return a > b }            // longer remaining precedes
+                return l.identityKey < r.identityKey
+            }
+        }
+    }
+
+    /// The resolved icon for the Apps slot when "Show the app's icon" is on,
+    /// else nil (→ the renderer draws the colored dot). The guard makes this
+    /// cost nothing when the option is off; icon resolution is FIFO-cached in
+    /// AppIdentityResolver, so steady state is a dictionary hit (no NSWorkspace
+    /// call per render). nil when no app holds or no icon resolves → dot.
+    var appsSlotIcon: NSImage? {
+        guard prefs.showAppIconForApps, let row = leastTransientAppRow else { return nil }
+        return AppIdentityResolver.icon(forBundleID: row.bundleID, path: row.iconBundleID)
+    }
+
     /// True when OUR OWN native IOPMAssertion is present in the latest read-back.
     /// Tests our assertion specifically — a row whose rawName carries our
     /// namePrefix AND whose NATURAL bucket is "This App" — rather than trusting

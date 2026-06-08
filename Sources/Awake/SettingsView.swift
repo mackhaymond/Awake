@@ -112,21 +112,28 @@ struct SettingsView: View {
 
     private var appearanceTab: some View {
         Form {
-            Section("Preview") { iconStylePreview }
-            Section("Composition") { compositionControls }
-            Section("Colors") {
+            Section("Icon Style") {
+                focusControl
+                iconStylePreview
+            }
+            Section {
                 colorRow("This App", binding: bindSelf)
                 colorRow("You", binding: bindCLI)
                     .help("Commands you ran in Terminal via the macOS caffeinate command.")
                 colorRow("Apps", binding: bindApp)
+                    .help("The colored dot shown for other apps — and the fallback when an app's icon can't load.")
+                Toggle("Show the app's icon instead of a dot", isOn: $model.prefs.showAppIconForApps)
+                    .help("When another app is the main icon, show that app's real icon. A colored dot is still used for the small corner badge and as a fallback.")
                 idleColorRow
                 HStack {
                     Spacer()
                     Button("Reset Colors") { model.prefs.resetIconColors() }
                         .buttonStyle(.borderless)
-                    Button("Reset Layout") { model.prefs.resetIconLayout() }
-                        .buttonStyle(.borderless)
                 }
+            } header: {
+                Text("Colors")
+            } footer: {
+                Text("Idle uses your Mac's menu-bar color automatically so it stays readable on light and dark backgrounds.")
             }
         }
         .formStyle(.grouped)
@@ -136,125 +143,77 @@ struct SettingsView: View {
 
     private var layout: IconLayout { model.prefs.iconLayout }
 
-    /// Copy-mutate-assign so each tweak persists and re-renders the live label.
-    private func updateLayout(_ mutate: (inout IconLayout) -> Void) {
-        var l = model.prefs.iconLayout
-        mutate(&l)
-        model.prefs.iconLayout = l
+    /// The single composition choice — what the icon emphasizes when more than
+    /// one thing is holding sleep. Captions explain each; the live preview below
+    /// shows the effect for the selected focus.
+    private var focusControl: some View {
+        Picker(selection: Binding(
+            get: { model.prefs.iconLayout.focus },
+            set: { newValue in
+                var l = model.prefs.iconLayout
+                l.focus = newValue
+                model.prefs.iconLayout = l
+            }
+        )) {
+            ForEach(IconFocus.allCases) { f in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(f.label)
+                    Text(f.caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .tag(f)
+            }
+        } label: {
+            EmptyView()
+        }
+        .pickerStyle(.radioGroup)
+        .labelsHidden()
     }
 
     /// Representative holder combinations rendered through the REAL renderer with
-    /// the current layout + palette, so the preview reflects every setting live.
+    /// the current focus + palette, so the preview reflects the choice live.
     private static let previewCombos: [(label: String, holders: IconHolders)] = [
         ("Idle", IconHolders()),
-        ("This App", IconHolders(thisApp: true)),
+        ("This app", IconHolders(thisApp: true)),
         ("You", IconHolders(you: true)),
-        ("Apps", IconHolders(apps: true)),
-        ("This App + Apps", IconHolders(thisApp: true, apps: true)),
-        ("You + Apps", IconHolders(you: true, apps: true)),
+        ("An app", IconHolders(apps: true)),
+        ("This app + an app", IconHolders(thisApp: true, apps: true)),
+        ("You + an app", IconHolders(you: true, apps: true)),
     ]
 
     private var iconStylePreview: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 10) {
-            ForEach(Self.previewCombos, id: \.label) { combo in
-                VStack(spacing: 3) {
-                    Image(nsImage: StatusIconRenderer.image(holders: combo.holders,
-                                                            palette: model.prefs.iconPalette,
-                                                            layout: layout))
-                        .frame(width: 22, height: 22)
-                    Text(combo.label)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+        // When "Show the app's icon" is on, pass a stand-in (Awake's own icon)
+        // for the apps cells so the preview honestly shows icon mode — the static
+        // preview has no real third-party app to resolve.
+        let standIn: NSImage? = model.prefs.showAppIconForApps ? NSApp.applicationIconImage : nil
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Preview")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 10) {
+                ForEach(Self.previewCombos, id: \.label) { combo in
+                    VStack(spacing: 3) {
+                        Image(nsImage: StatusIconRenderer.image(
+                            holders: combo.holders,
+                            palette: model.prefs.iconPalette,
+                            layout: layout,
+                            appsIcon: combo.holders.apps ? standIn : nil))
+                            .frame(width: 22, height: 22)
+                        Text(combo.label)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .help("Menu-bar icon when: \(combo.label)")
                 }
-                .help("Menu-bar icon when: \(combo.label)")
             }
+            Text("A coffee cup means Awake or you are holding sleep; a colored dot (or app icon) means another app is.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
-    }
-
-    private var compositionControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("Preset", selection: Binding(
-                get: { layout.preset },
-                set: { preset in updateLayout { $0.apply(preset: preset) } }
-            )) {
-                // Include .custom so the bound value ALWAYS has a matching tag —
-                // tuning a knob (priority/corner) sets preset == .custom, and a
-                // selection with no tag makes SwiftUI log an "invalid selection"
-                // warning on every re-render. The Custom segment doubles as a
-                // "you've customized" indicator; selecting it is inert
-                // (apply(preset: .custom) is a no-op).
-                ForEach(CompositionPreset.allCases) { preset in
-                    Text(preset.label).tag(preset)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            Text(layout.preset.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Toggle("Cup is always the main mark", isOn: Binding(
-                get: { layout.anchorCup },
-                set: { v in updateLayout { $0.anchorCup = v } }
-            ))
-            .help("On: the cup is always primary and apps show as a corner badge. Off (Holder-First): the highest-priority active holder becomes the main mark.")
-
-            Toggle("Expand a lone app to full size", isOn: Binding(
-                get: { layout.expandLoneHolder },
-                set: { v in updateLayout { $0.expandLoneHolder = v } }
-            ))
-            .disabled(!layout.anchorCup)
-            .help("Anchored only: when just an app is holding, show it full-size instead of an empty cup + badge.")
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Priority")
-                    .font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
-                Text("Tints the cup when This App & You both hold, and picks the main mark in Holder-First.")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                ForEach(Array(layout.normalizedPriority.enumerated()), id: \.element) { idx, cat in
-                    priorityRow(cat: cat, index: idx)
-                }
-            }
-
-            Picker("Badge corner", selection: Binding(
-                get: { layout.corner },
-                set: { v in updateLayout { $0.corner = v } }
-            )) {
-                ForEach(IconCorner.allCases) { c in Text(c.label).tag(c) }
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func priorityRow(cat: IconCategory, index: Int) -> some View {
-        HStack(spacing: 8) {
-            Text("\(index + 1).")
-                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-            Text(cat.rawValue)
-            Spacer()
-            Button { movePriority(from: index, by: -1) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.borderless).disabled(index == 0)
-                .frame(width: 24, height: 24).contentShape(Rectangle())
-                .accessibilityLabel("Move \(cat.rawValue) up")
-            Button { movePriority(from: index, by: 1) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.borderless).disabled(index == IconCategory.allCases.count - 1)
-                .frame(width: 24, height: 24).contentShape(Rectangle())
-                .accessibilityLabel("Move \(cat.rawValue) down")
-        }
-    }
-
-    private func movePriority(from index: Int, by delta: Int) {
-        updateLayout { l in
-            var arr = l.normalizedPriority
-            let j = index + delta
-            guard arr.indices.contains(index), arr.indices.contains(j) else { return }
-            arr.swapAt(index, j)
-            l.priority = arr
-        }
     }
 
     private func colorRow(_ title: String, binding: Binding<Color>) -> some View {

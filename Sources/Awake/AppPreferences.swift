@@ -20,6 +20,7 @@ final class AppPreferences {
         static let notifyOnExpiry  = "awake.notifyOnExpiry"
         static let activateOnLaunch = "awake.activateOnLaunch"
         static let iconLayout      = "awake.iconLayout"
+        static let showAppIcon     = "awake.iconShowAppIcon"
     }
 
     /// Max remembered holders; oldest by lastSeen are evicted past this.
@@ -53,13 +54,19 @@ final class AppPreferences {
         }
     }
 
-    /// Menu-bar icon composition (primary glyph, apps shape, priority, layout).
+    /// Menu-bar icon composition — now just the focus choice.
     var iconLayout: IconLayout {
         didSet {
             if let data = try? JSONEncoder().encode(iconLayout) {
                 UserDefaults.standard.set(data, forKey: Keys.iconLayout)
             }
         }
+    }
+
+    /// When on, the Apps slot shows the least-transient app's real icon instead
+    /// of the colored dot (when that app is the full-size mark). Default off.
+    var showAppIconForApps: Bool {
+        didSet { UserDefaults.standard.set(showAppIconForApps, forKey: Keys.showAppIcon) }
     }
 
     var iconColorSelf: ColorStore { didSet { Self.saveColor(iconColorSelf, Keys.colorSelf) } }
@@ -265,21 +272,34 @@ final class AppPreferences {
         self.settingsTab       = defaults.integer(forKey: Keys.settingsTab)   // default 0
         self.notifyOnExpiry    = defaults.bool(forKey: Keys.notifyOnExpiry)   // default false
         self.activateOnLaunch  = defaults.bool(forKey: Keys.activateOnLaunch) // default false
+        self.showAppIconForApps = defaults.bool(forKey: Keys.showAppIcon)    // default false
 
-        if let data = defaults.data(forKey: Keys.iconLayout),
-           var layout = try? JSONDecoder().decode(IconLayout.self, from: data) {
-            // The primary-glyph and apps-indicator pickers were removed; the icon
-            // always uses the default cup + dot. Normalize any value persisted by
-            // an older build so a stale custom glyph/shape can't survive.
-            layout.primaryGlyph = .cup
-            layout.appsShape = .dot
-            self.iconLayout = layout
+        // IconLayout collapsed to a single `focus` field. Decode the new shape;
+        // otherwise migrate a legacy multi-field blob (Holder-First, i.e.
+        // anchorCup == false, → "other apps in front"; anything else → "Awake in
+        // front"). All other legacy fields are dropped. Colors are on separate
+        // keys and untouched.
+        if let data = defaults.data(forKey: Keys.iconLayout) {
+            if let layout = try? JSONDecoder().decode(IconLayout.self, from: data) {
+                self.iconLayout = layout
+            } else if let legacy = try? JSONDecoder().decode(LegacyIconLayout.self, from: data) {
+                self.iconLayout = IconLayout(focus: legacy.anchorCup == false ? .otherAppsFirst : .awakeFirst)
+            } else {
+                self.iconLayout = IconLayout()
+            }
         } else {
-            self.iconLayout = IconLayout()   // Classic default
+            self.iconLayout = IconLayout()
         }
     }
 
     func resetIconLayout() {
         iconLayout = IconLayout()
     }
+}
+
+/// Minimal decoder for the pre-focus IconLayout blob, used only to migrate an
+/// existing install: a Holder-First layout (anchorCup == false) maps to
+/// "other apps in front". All other old fields are intentionally ignored.
+private struct LegacyIconLayout: Decodable {
+    var anchorCup: Bool?
 }

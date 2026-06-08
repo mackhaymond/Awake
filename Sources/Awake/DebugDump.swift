@@ -68,11 +68,10 @@ enum DebugDump {
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
     }
 
-    /// Renders all 6 icon states (shipped default palette) onto dark + light
-    /// rows and writes a PNG — verifies the real renderer incl. badge compositing.
-    /// Render representative holder combinations across the live + a few alternate
-    /// layouts onto a dark sheet — verifies the real compositor (primary glyph,
-    /// apps shape, expand/holder-first, badge corner) end to end.
+    /// Render representative holder combinations across both icon-focus modes
+    /// (with and without the app-icon option) onto a dark sheet — verifies the
+    /// real compositor (cup primary, apps dot, apps-primary, app-icon squircle,
+    /// badge corner) end to end.
     @MainActor
     static func renderIcons(to path: String) {
         let palette = AppPreferences().iconPalette
@@ -85,18 +84,12 @@ enum DebugDump {
             ("you+app", IconHolders(you: true, apps: true)),
             ("all", IconHolders(thisApp: true, you: true, apps: true)),
         ]
-        // The user's saved layout first, then a spread of alternates as a sanity sheet.
-        var expandTri = IconLayout(); expandTri.expandLoneHolder = true; expandTri.appsShape = .triangle
-        var holderTri = IconLayout(); holderTri.anchorCup = false; holderTri.appsShape = .triangle
-        var appsFirst = IconLayout(); appsFirst.anchorCup = false; appsFirst.appsShape = .square
-        appsFirst.priority = [.apps, .thisApp, .you]
-        var boltDisc = IconLayout(); boltDisc.primaryGlyph = .bolt; boltDisc.appsShape = .disc
-        let layouts: [(String, IconLayout)] = [
-            ("Saved", AppPreferences().iconLayout),
-            ("Expand+Tri", expandTri),
-            ("HolderFirst+Tri", holderTri),
-            ("AppsFirst+Sq", appsFirst),
-            ("Bolt+Disc", boltDisc),
+        // A stand-in app icon (Awake's own) to exercise the app-icon path.
+        let standIn = NSApp?.applicationIconImage ?? NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil)
+        let layouts: [(String, IconLayout, NSImage?)] = [
+            ("Awake first",        IconLayout(focus: .awakeFirst),     nil),
+            ("Apps first (dot)",   IconLayout(focus: .otherAppsFirst), nil),
+            ("Apps first (icon)",  IconLayout(focus: .otherAppsFirst), standIn),
         ]
         let cell = 56, pad = 16, labelW = 130
         let w = labelW + combos.count * (cell + pad) + pad
@@ -114,7 +107,8 @@ enum DebugDump {
                 let x = CGFloat(labelW + pad + c * (cell + pad))
                 var img = NSImage()
                 dark.performAsCurrentDrawingAppearance {
-                    img = StatusIconRenderer.image(holders: combo.1, palette: palette, layout: layout.1)
+                    img = StatusIconRenderer.image(holders: combo.1, palette: palette,
+                                                   layout: layout.1, appsIcon: layout.2)
                 }
                 draw(img, in: NSRect(x: x, y: y, width: CGFloat(cell), height: CGFloat(cell)), templateTint: .white)
             }

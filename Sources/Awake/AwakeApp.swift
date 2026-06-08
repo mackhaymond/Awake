@@ -117,7 +117,8 @@ struct AwakeApp: App {
     private func labelImage(state: IconState, holders: IconHolders) -> some View {
         Image(nsImage: StatusIconRenderer.image(holders: holders,
                                                 palette: model.prefs.iconPalette,
-                                                layout: model.prefs.iconLayout))
+                                                layout: model.prefs.iconLayout,
+                                                appsIcon: model.appsSlotIcon))
             .accessibilityLabel(Self.accessibilityLabel(for: state))
     }
 
