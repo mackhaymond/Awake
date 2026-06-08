@@ -267,7 +267,12 @@ final class AppPreferences {
         self.activateOnLaunch  = defaults.bool(forKey: Keys.activateOnLaunch) // default false
 
         if let data = defaults.data(forKey: Keys.iconLayout),
-           let layout = try? JSONDecoder().decode(IconLayout.self, from: data) {
+           var layout = try? JSONDecoder().decode(IconLayout.self, from: data) {
+            // The primary-glyph and apps-indicator pickers were removed; the icon
+            // always uses the default cup + dot. Normalize any value persisted by
+            // an older build so a stale custom glyph/shape can't survive.
+            layout.primaryGlyph = .cup
+            layout.appsShape = .dot
             self.iconLayout = layout
         } else {
             self.iconLayout = IconLayout()   // Classic default

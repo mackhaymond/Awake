@@ -113,8 +113,6 @@ struct SettingsView: View {
     private var appearanceTab: some View {
         Form {
             Section("Preview") { iconStylePreview }
-            Section("Primary Icon") { primaryGlyphPicker }
-            Section("Apps Indicator") { appsShapePicker }
             Section("Composition") { compositionControls }
             Section("Colors") {
                 colorRow("This App", binding: bindSelf)
@@ -173,54 +171,6 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 4)
-    }
-
-    private var primaryGlyphPicker: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 8) {
-            ForEach(PrimaryGlyph.allCases) { g in
-                selectableSwatch(symbol: g.filled, title: g.label,
-                                 color: nil, selected: layout.primaryGlyph == g) {
-                    updateLayout { $0.primaryGlyph = g }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var appsShapePicker: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 8) {
-            ForEach(BadgeShape.allCases) { s in
-                selectableSwatch(symbol: s.symbol, title: s.label,
-                                 color: model.prefs.iconColorApp.swiftUIColor,
-                                 selected: layout.appsShape == s) {
-                    updateLayout { $0.appsShape = s }
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func selectableSwatch(symbol: String, title: String, color: Color?,
-                                  selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15))
-                    .foregroundStyle(color ?? Color.primary)
-                    .frame(width: 26, height: 26)
-                Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6)
-                .fill(selected ? Color.accentColor.opacity(0.22) : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 6)
-                .stroke(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .help(title)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var compositionControls: some View {
