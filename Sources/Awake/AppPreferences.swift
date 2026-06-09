@@ -273,18 +273,20 @@ final class AppPreferences {
         self.notifyOnExpiry    = defaults.bool(forKey: Keys.notifyOnExpiry)   // default false
         self.activateOnLaunch  = defaults.bool(forKey: Keys.activateOnLaunch) // default false
 
-        // IconLayout: decode the current shape; else migrate a pre-focus blob
-        // (anchorCup == false → "other apps in front"). The newer fields are
-        // Codable WITH defaults, so a {focus}-only blob decodes cleanly and the
-        // new fields take their defaults. Colors live on separate keys, untouched.
+        // IconLayout decodes leniently now (missing keys fall back to defaults),
+        // so this succeeds for both the current shape AND an older {focus}-only
+        // blob — without that, the synthesized decoder would throw on the newer
+        // fields and silently reset the user's choice. Colors are on separate
+        // keys, untouched.
         var layout: IconLayout
         if let data = defaults.data(forKey: Keys.iconLayout) {
-            if let decoded = try? JSONDecoder().decode(IconLayout.self, from: data) {
-                layout = decoded
-            } else if let legacy = try? JSONDecoder().decode(LegacyIconLayout.self, from: data) {
-                layout = IconLayout(focus: legacy.anchorCup == false ? .otherAppsFirst : .awakeFirst)
-            } else {
-                layout = IconLayout()
+            layout = (try? JSONDecoder().decode(IconLayout.self, from: data)) ?? IconLayout()
+            // Pre-focus blobs never wrote a "focus" key but DID write "anchorCup"
+            // (only those did), so detect them by that key and map Holder-First
+            // (anchorCup == false) → "other apps in front".
+            if let legacy = try? JSONDecoder().decode(LegacyIconLayout.self, from: data),
+               let anchor = legacy.anchorCup {
+                layout.focus = anchor ? .awakeFirst : .otherAppsFirst
             }
         } else {
             layout = IconLayout()

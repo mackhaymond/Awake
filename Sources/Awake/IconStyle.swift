@@ -78,9 +78,10 @@ enum LoneAppStyle: String, Codable, CaseIterable, Sendable, Identifiable {
 
 /// Menu-bar icon configuration, persisted as JSON in UserDefaults. The cup
 /// glyph and the top-right badge corner are fixed; the apps mark is a colored
-/// dot unless an app-icon option is on. New fields are Codable WITH defaults so
-/// older single-field blobs decode cleanly. (Pre-focus layouts are migrated in
-/// AppPreferences.)
+/// dot unless an app-icon option is on. A custom lenient decoder (below) fills
+/// absent keys from defaults, so a blob written by an OLDER build that had fewer
+/// fields (e.g. just `{"focus":…}`) still loads without losing the setting.
+/// (Pre-focus blobs are mapped from `anchorCup` in AppPreferences.)
 struct IconLayout: Codable, Equatable, Sendable {
     /// Which slot is the full-size mark when a cup holder AND an app both hold.
     var focus: IconFocus = .awakeFirst
@@ -94,4 +95,25 @@ struct IconLayout: Codable, Equatable, Sendable {
     /// In apps-first combined states, draw the cup holder as a small corner mark
     /// (a colored dot, or a ring around a real app icon). Off = clean app-only.
     var showSecondary: Bool = true
+
+    enum CodingKeys: String, CodingKey {
+        case focus, loneApp, appIconMain, appIconCorner, showSecondary
+    }
+}
+
+extension IconLayout {
+    /// Lenient decode: absent keys fall back to defaults instead of throwing.
+    /// Swift's SYNTHESIZED Decodable throws keyNotFound for a missing key (it does
+    /// NOT apply the property's `=` default), which would make an older blob with
+    /// fewer fields fail to decode and silently reset the user's choice. Declared
+    /// in an extension so the memberwise init and synthesized Encodable survive.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        focus = try c.decodeIfPresent(IconFocus.self, forKey: .focus) ?? focus
+        loneApp = try c.decodeIfPresent(LoneAppStyle.self, forKey: .loneApp) ?? loneApp
+        appIconMain = try c.decodeIfPresent(Bool.self, forKey: .appIconMain) ?? appIconMain
+        appIconCorner = try c.decodeIfPresent(Bool.self, forKey: .appIconCorner) ?? appIconCorner
+        showSecondary = try c.decodeIfPresent(Bool.self, forKey: .showSecondary) ?? showSecondary
+    }
 }

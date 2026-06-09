@@ -64,7 +64,14 @@ enum DebugDump {
         let after = ourHolds().count
         print("after: our assertions = \(after)")
 
-        let passed = ok && !held.isEmpty && !(buckets[.thisApp] ?? []).isEmpty && after == 0
+        // Migration sanity: an older single-field {focus} blob must keep its focus.
+        // (v2 added fields; a non-lenient decoder would throw and reset the choice.)
+        let focusBlob = Data(#"{"focus":"otherAppsFirst"}"#.utf8)
+        let migratedFocus = (try? JSONDecoder().decode(IconLayout.self, from: focusBlob))?.focus
+        let migrationOK = (migratedFocus == .otherAppsFirst)
+        print("migration: legacy {focus:otherAppsFirst} -> \(migratedFocus.map { "\($0)" } ?? "nil") \(migrationOK ? "OK" : "FAIL")")
+
+        let passed = ok && !held.isEmpty && !(buckets[.thisApp] ?? []).isEmpty && after == 0 && migrationOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
     }
 

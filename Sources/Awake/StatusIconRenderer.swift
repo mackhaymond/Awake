@@ -221,17 +221,23 @@ enum StatusIconRenderer {
             path.addClip()
             icon.draw(in: square, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.current?.restoreGraphicsState()
-            // Subtle grey separation edge so a dark/busy icon reads on the bar.
+            // Grey separation edge so any icon reads against the bar.
             NSColor(white: 0.5, alpha: 1).setStroke()
             path.lineWidth = 1
             path.stroke()
-            // When a cup holder is also active, frame the icon with a thin colored
-            // ring — this IS the "you're also holding" mark (it frames without
-            // occluding the icon, unlike a corner pip).
+            // When a cup holder is also active, frame the icon with a colored ring
+            // — the "you're also holding" mark (frames without occluding, unlike a
+            // corner pip). Drawn just INSIDE the edge at 2pt so it reads as a
+            // deliberate frame distinct from the grey separation rim (matters most
+            // for the default near-white This-App color on a light bar).
             if let accentRing {
+                let inner = square.insetBy(dx: 1.25, dy: 1.25)
+                let ring = NSBezierPath(roundedRect: inner,
+                                        xRadius: max(0, radius - 1.25),
+                                        yRadius: max(0, radius - 1.25))
                 accentRing.setStroke()
-                path.lineWidth = 1.5
-                path.stroke()
+                ring.lineWidth = 2
+                ring.stroke()
             }
             return true
         }

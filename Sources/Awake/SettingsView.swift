@@ -119,9 +119,18 @@ struct SettingsView: View {
                     .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot.")
                 Toggle("Show an app's real icon in the corner", isOn: layoutBinding(\.appIconCorner))
                     .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
-                Toggle("When an app is in front, show Awake's mark too", isOn: layoutBinding(\.showSecondary))
+                    // Inert when an app is always the main mark (it's never in the corner).
+                    .disabled(layout.focus == .otherAppsFirst && layout.loneApp == .appFull)
+                Toggle("When an app is in front, mark who else is holding", isOn: layoutBinding(\.showSecondary))
                     .help("When another app is the main icon and Awake or you are also holding, add a small colored mark — a corner dot, or a thin ring around the app's icon. Turn off for a clean app-only icon.")
+                    // Only applies when an app can be in front.
+                    .disabled(layout.focus == .awakeFirst)
                 iconStylePreview
+                HStack {
+                    Spacer()
+                    Button("Reset Icon Style") { model.prefs.resetIconStyle() }
+                        .buttonStyle(.borderless)
+                }
             }
             Section {
                 colorRow("This App", binding: bindSelf)
