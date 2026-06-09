@@ -63,11 +63,6 @@ final class AppPreferences {
         }
     }
 
-    /// When on, the Apps slot shows the least-transient app's real icon instead
-    /// of the colored dot (when that app is the full-size mark). Default off.
-    var showAppIconForApps: Bool {
-        didSet { UserDefaults.standard.set(showAppIconForApps, forKey: Keys.showAppIcon) }
-    }
 
     var iconColorSelf: ColorStore { didSet { Self.saveColor(iconColorSelf, Keys.colorSelf) } }
     var iconColorCLI:  ColorStore { didSet { Self.saveColor(iconColorCLI,  Keys.colorCLI)  } }
@@ -229,7 +224,11 @@ final class AppPreferences {
         iconColorCLI  = .defaultCLI
         iconColorApp  = .defaultApp
         iconColorIdle = nil          // back to adaptive system color
-        showAppIconForApps = false   // restore the default Apps mark (a dot)
+    }
+
+    /// Restore the default icon composition (focus + lone-app + app-icon options).
+    func resetIconStyle() {
+        iconLayout = IconLayout()
     }
 
     /// Resolved palette for the renderer. A nil slot means "render that glyph as
@@ -273,23 +272,38 @@ final class AppPreferences {
         self.settingsTab       = defaults.integer(forKey: Keys.settingsTab)   // default 0
         self.notifyOnExpiry    = defaults.bool(forKey: Keys.notifyOnExpiry)   // default false
         self.activateOnLaunch  = defaults.bool(forKey: Keys.activateOnLaunch) // default false
-        self.showAppIconForApps = defaults.bool(forKey: Keys.showAppIcon)    // default false
 
-        // IconLayout collapsed to a single `focus` field. Decode the new shape;
-        // otherwise migrate a legacy multi-field blob (Holder-First, i.e.
-        // anchorCup == false, → "other apps in front"; anything else → "Awake in
-        // front"). All other legacy fields are dropped. Colors are on separate
-        // keys and untouched.
+        // IconLayout: decode the current shape; else migrate a pre-focus blob
+        // (anchorCup == false → "other apps in front"). The newer fields are
+        // Codable WITH defaults, so a {focus}-only blob decodes cleanly and the
+        // new fields take their defaults. Colors live on separate keys, untouched.
+        var layout: IconLayout
         if let data = defaults.data(forKey: Keys.iconLayout) {
-            if let layout = try? JSONDecoder().decode(IconLayout.self, from: data) {
-                self.iconLayout = layout
+            if let decoded = try? JSONDecoder().decode(IconLayout.self, from: data) {
+                layout = decoded
             } else if let legacy = try? JSONDecoder().decode(LegacyIconLayout.self, from: data) {
-                self.iconLayout = IconLayout(focus: legacy.anchorCup == false ? .otherAppsFirst : .awakeFirst)
+                layout = IconLayout(focus: legacy.anchorCup == false ? .otherAppsFirst : .awakeFirst)
             } else {
-                self.iconLayout = IconLayout()
+                layout = IconLayout()
             }
         } else {
-            self.iconLayout = IconLayout()
+            layout = IconLayout()
+        }
+        // Fold the retired standalone "show app icon" toggle into the layout: it
+        // only ever affected the full-size/main app mark. Then drop the old key.
+        var migrated = false
+        if defaults.object(forKey: Keys.showAppIcon) != nil {
+            if defaults.bool(forKey: Keys.showAppIcon) && !layout.appIconMain {
+                layout.appIconMain = true
+            }
+            defaults.removeObject(forKey: Keys.showAppIcon)
+            migrated = true
+        }
+        self.iconLayout = layout
+        // didSet doesn't fire for the initializing assignment, so persist the
+        // upgraded blob explicitly when we migrated.
+        if migrated, let data = try? JSONEncoder().encode(layout) {
+            defaults.set(data, forKey: Keys.iconLayout)
         }
     }
 

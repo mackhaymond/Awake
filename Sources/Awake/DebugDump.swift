@@ -82,14 +82,17 @@ enum DebugDump {
             ("app", IconHolders(apps: true)),
             ("self+app", IconHolders(thisApp: true, apps: true)),
             ("you+app", IconHolders(you: true, apps: true)),
+            ("self+you", IconHolders(thisApp: true, you: true)),
             ("all", IconHolders(thisApp: true, you: true, apps: true)),
         ]
-        // A stand-in app icon (Awake's own) to exercise the app-icon path.
-        let standIn = NSApp?.applicationIconImage ?? NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil)
+        // A real, recognizable app icon to exercise the app-icon path honestly.
+        let standIn = sampleAppIcon()
         let layouts: [(String, IconLayout, NSImage?)] = [
-            ("Awake first",        IconLayout(focus: .awakeFirst),     nil),
-            ("Apps first (dot)",   IconLayout(focus: .otherAppsFirst), nil),
-            ("Apps first (icon)",  IconLayout(focus: .otherAppsFirst), standIn),
+            ("Awake first",        IconLayout(focus: .awakeFirst),                              standIn),
+            ("Apps first · dot",   IconLayout(focus: .otherAppsFirst),                          standIn),
+            ("Apps first · icon",  IconLayout(focus: .otherAppsFirst, appIconMain: true),       standIn),
+            ("Lone: cup+dot",      IconLayout(focus: .awakeFirst, loneApp: .cupWithDot),        standIn),
+            ("Corner icon",        IconLayout(focus: .awakeFirst, appIconMain: true, appIconCorner: true), standIn),
         ]
         let cell = 56, pad = 16, labelW = 130
         let w = labelW + combos.count * (cell + pad) + pad
@@ -119,6 +122,22 @@ enum DebugDump {
             try? png.write(to: URL(fileURLWithPath: path))
             print("wrote \(path)  (cols: \(combos.map(\.0).joined(separator: ", ")))")
         }
+    }
+
+    /// A real, recognizable app icon for the --icons sanity sheet (so the app-icon
+    /// path is exercised with a true multi-color icon, not a stand-in). Falls back
+    /// to Awake's own icon, then a generic SF Symbol.
+    @MainActor
+    private static func sampleAppIcon() -> NSImage {
+        let ws = NSWorkspace.shared
+        for bid in ["com.apple.Safari", "com.apple.Music", "com.apple.finder", "com.apple.Notes"] {
+            if let url = ws.urlForApplication(withBundleIdentifier: bid) {
+                return ws.icon(forFile: url.path)
+            }
+        }
+        return NSApp?.applicationIconImage
+            ?? NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil)
+            ?? NSImage()
     }
 
     // MARK: - App icon generation (.iconset)

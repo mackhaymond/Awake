@@ -48,7 +48,28 @@ enum IconFocus: String, Codable, CaseIterable, Sendable, Identifiable {
         case .awakeFirst:
             return "The coffee cup stays the main icon; other apps appear as a small dot in the corner."
         case .otherAppsFirst:
-            return "Whatever else is keeping your Mac awake becomes the main icon; Awake's cup shrinks to the corner."
+            return "Whatever else is keeping your Mac awake becomes the main icon; Awake shows as a small dot — or a thin ring around the app's icon — in the corner."
+        }
+    }
+}
+
+// MARK: - Lone-app style
+
+/// What the icon shows when ONLY another app is keeping the Mac awake (no cup
+/// holder). Either the app stands on its own, or an idle cup carries the app as
+/// a small corner mark.
+enum LoneAppStyle: String, Codable, CaseIterable, Sendable, Identifiable {
+    /// The app is the full-size mark (a dot, or its real icon). Default.
+    case appFull
+    /// An idle (outline) cup with the app shown as a small corner mark.
+    case cupWithDot
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .appFull:    return "Show the app on its own"
+        case .cupWithDot: return "Show a cup with the app in the corner"
         }
     }
 }
@@ -56,9 +77,21 @@ enum IconFocus: String, Codable, CaseIterable, Sendable, Identifiable {
 // MARK: - Layout
 
 /// Menu-bar icon configuration, persisted as JSON in UserDefaults. The cup
-/// glyph, the apps dot, and the top-right badge corner are all fixed; the only
-/// user choice is `focus`. (Legacy multi-field layouts are migrated to a focus
-/// value in AppPreferences.)
+/// glyph and the top-right badge corner are fixed; the apps mark is a colored
+/// dot unless an app-icon option is on. New fields are Codable WITH defaults so
+/// older single-field blobs decode cleanly. (Pre-focus layouts are migrated in
+/// AppPreferences.)
 struct IconLayout: Codable, Equatable, Sendable {
+    /// Which slot is the full-size mark when a cup holder AND an app both hold.
     var focus: IconFocus = .awakeFirst
+    /// What to show when ONLY an app holds (no cup holder).
+    var loneApp: LoneAppStyle = .appFull
+    /// Show the app's real icon (vs a colored dot) when the app is the MAIN mark.
+    var appIconMain: Bool = false
+    /// Show the app's real icon (vs a colored dot) when the app is the small
+    /// CORNER mark. (A real icon at ~8px can be hard to read.)
+    var appIconCorner: Bool = false
+    /// In apps-first combined states, draw the cup holder as a small corner mark
+    /// (a colored dot, or a ring around a real app icon). Off = clean app-only.
+    var showSecondary: Bool = true
 }

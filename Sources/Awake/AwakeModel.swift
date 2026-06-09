@@ -84,7 +84,9 @@ final class AwakeModel {
     /// AppIdentityResolver, so steady state is a dictionary hit (no NSWorkspace
     /// call per render). nil when no app holds or no icon resolves → dot.
     var appsSlotIcon: NSImage? {
-        guard prefs.showAppIconForApps, let row = leastTransientAppRow else { return nil }
+        let layout = prefs.iconLayout
+        guard layout.appIconMain || layout.appIconCorner,
+              let row = leastTransientAppRow else { return nil }
         return AppIdentityResolver.icon(forBundleID: row.bundleID, path: row.iconBundleID)
     }
 

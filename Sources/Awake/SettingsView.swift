@@ -114,6 +114,13 @@ struct SettingsView: View {
         Form {
             Section("Icon Style") {
                 focusControl
+                loneAppControl
+                Toggle("Show an app's real icon as the main mark", isOn: layoutBinding(\.appIconMain))
+                    .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot.")
+                Toggle("Show an app's real icon in the corner", isOn: layoutBinding(\.appIconCorner))
+                    .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
+                Toggle("When an app is in front, show Awake's mark too", isOn: layoutBinding(\.showSecondary))
+                    .help("When another app is the main icon and Awake or you are also holding, add a small colored mark — a corner dot, or a thin ring around the app's icon. Turn off for a clean app-only icon.")
                 iconStylePreview
             }
             Section {
@@ -122,8 +129,6 @@ struct SettingsView: View {
                     .help("Commands you ran in Terminal via the macOS caffeinate command.")
                 colorRow("Apps", binding: bindApp)
                     .help("The colored dot shown for other apps — and the fallback when an app's icon can't load.")
-                Toggle("Show the app's icon instead of a dot", isOn: $model.prefs.showAppIconForApps)
-                    .help("When another app is the main icon, show that app's real icon — the app that has been keeping your Mac awake the longest. A colored dot is still used for the small corner badge and as a fallback.")
                 idleColorRow
                 HStack {
                     Spacer()
@@ -143,18 +148,23 @@ struct SettingsView: View {
 
     private var layout: IconLayout { model.prefs.iconLayout }
 
-    /// The single composition choice — what the icon emphasizes when more than
-    /// one thing is holding sleep. Captions explain each; the live preview below
-    /// shows the effect for the selected focus.
-    private var focusControl: some View {
-        Picker(selection: Binding(
-            get: { model.prefs.iconLayout.focus },
-            set: { newValue in
+    /// Copy-mutate-assign binding to a single IconLayout field, so each tweak
+    /// persists and re-renders the live label + preview.
+    private func layoutBinding<V>(_ keyPath: WritableKeyPath<IconLayout, V>) -> Binding<V> {
+        Binding(
+            get: { model.prefs.iconLayout[keyPath: keyPath] },
+            set: { v in
                 var l = model.prefs.iconLayout
-                l.focus = newValue
+                l[keyPath: keyPath] = v
                 model.prefs.iconLayout = l
             }
-        )) {
+        )
+    }
+
+    /// What's the big mark when a cup holder AND an app are both active. Captions
+    /// explain each; the live preview below shows the effect.
+    private var focusControl: some View {
+        Picker("Show in front", selection: layoutBinding(\.focus)) {
             ForEach(IconFocus.allCases) { f in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(f.label)
@@ -165,15 +175,22 @@ struct SettingsView: View {
                 }
                 .tag(f)
             }
-        } label: {
-            EmptyView()
         }
         .pickerStyle(.radioGroup)
-        .labelsHidden()
     }
 
-    /// Representative holder combinations rendered through the REAL renderer with
-    /// the current focus + palette, so the preview reflects the choice live.
+    /// What the icon shows when ONLY an app is active (no cup holder).
+    private var loneAppControl: some View {
+        Picker("When only an app is active", selection: layoutBinding(\.loneApp)) {
+            ForEach(LoneAppStyle.allCases) { s in
+                Text(s.label).tag(s)
+            }
+        }
+        .pickerStyle(.radioGroup)
+    }
+
+    /// All 8 holder combinations rendered through the REAL renderer with the
+    /// current layout + palette, so the preview reflects every choice live.
     private static let previewCombos: [(label: String, holders: IconHolders)] = [
         ("Idle", IconHolders()),
         ("This app", IconHolders(thisApp: true)),
@@ -181,18 +198,21 @@ struct SettingsView: View {
         ("An app", IconHolders(apps: true)),
         ("This app + an app", IconHolders(thisApp: true, apps: true)),
         ("You + an app", IconHolders(you: true, apps: true)),
+        ("This app + You", IconHolders(thisApp: true, you: true)),
+        ("This app + You + an app", IconHolders(thisApp: true, you: true, apps: true)),
     ]
 
     private var iconStylePreview: some View {
-        // When "Show the app's icon" is on, pass a stand-in (Awake's own icon)
-        // for the apps cells so the preview honestly shows icon mode — the static
-        // preview has no real third-party app to resolve.
-        let standIn: NSImage? = model.prefs.showAppIconForApps ? NSApp.applicationIconImage : nil
+        // Pass a stand-in (Awake's own icon) for the apps cells when either app-
+        // icon option is on, so the static preview honestly shows icon mode — it
+        // has no real third-party app to resolve.
+        let iconMode = layout.appIconMain || layout.appIconCorner
+        let standIn: NSImage? = iconMode ? NSApp.applicationIconImage : nil
         return VStack(alignment: .leading, spacing: 6) {
             Text("Preview")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 10) {
                 ForEach(Self.previewCombos, id: \.label) { combo in
                     VStack(spacing: 3) {
                         Image(nsImage: StatusIconRenderer.image(
@@ -209,9 +229,9 @@ struct SettingsView: View {
                     .help("Menu-bar icon when: \(combo.label)")
                 }
             }
-            Text(model.prefs.showAppIconForApps
-                 ? "A coffee cup means Awake or you are holding sleep; an app icon means another app is. The preview uses Awake's own icon as a stand-in — the menu bar shows each app's real icon."
-                 : "A coffee cup means Awake or you are holding sleep; a colored dot means another app is.")
+            Text(iconMode
+                 ? "A cup means Awake or you are holding; a dot or app icon means another app is. The preview uses Awake's own icon as a stand-in — the menu bar shows each app's real icon."
+                 : "A cup means Awake or you are holding; a colored dot means another app is.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

@@ -27,11 +27,11 @@ enum StatusIconRenderer {
 
     // MARK: - Primary entry point (holders + layout)
 
-    /// The menu-bar glyph for the current holders, composed per the layout's
-    /// focus. `appsIcon`, when provided, is the real icon of the least-transient
-    /// app and is drawn (squircle-masked) instead of the colored dot WHENEVER
-    /// the apps slot is the full-size primary; everywhere it's a small corner
-    /// badge it stays the dot. Nil → always the dot (the default).
+    /// The menu-bar glyph for the current holders, composed per the layout.
+    /// `appsIcon`, when provided, is the real icon of the least-transient app; the
+    /// layout's appIconMain / appIconCorner decide whether it's used in the main
+    /// or corner position (else a colored dot). One grammar in both focus modes:
+    /// a primary mark + a small corner mark tinted by whoever is in the corner.
     static func image(holders: IconHolders, palette p: Palette, layout: IconLayout,
                       appsIcon: NSImage? = nil) -> NSImage {
         // Idle: outline cup, adaptive/idle color.
@@ -44,39 +44,43 @@ enum StatusIconRenderer {
         let cupActive = holders.cupActive
         let cupColor: NSColor? = holders.thisApp ? p.selfColor : (holders.you ? p.cli : nil)
 
-        // Which slot is the full-size primary?
+        // Lone app (an app holds, no cup holder) — the one state `focus` is silent
+        // on; `loneApp` decides it.
+        if !cupActive {
+            switch layout.loneApp {
+            case .cupWithDot:
+                // Idle OUTLINE cup (never reads as an active filled cup) carrying
+                // the app as a small corner mark.
+                let primary = Mark(symbol: cupOutline, color: p.idle, filled: false)
+                return composeAppCorner(primary: primary, appsIcon: appsIcon,
+                                        layout: layout, app: p.app)
+            case .appFull:
+                return appPrimary(appsIcon: appsIcon, layout: layout, app: p.app, secondary: nil)
+            }
+        }
+
+        // A cup holder is active (maybe an app too). Focus decides the primary in
+        // combined states; pure-cup states are focus-invariant.
         let cupIsPrimary: Bool
         switch layout.focus {
-        case .awakeFirst:
-            // Cup is the brand mark whenever a cup holder is active. A lone app
-            // (no cup holder) expands to the full-size apps mark instead of an
-            // empty outline cup + dot (which reads as idle).
-            cupIsPrimary = cupActive
-        case .otherAppsFirst:
-            // Apps take the spotlight when present. LOAD-BEARING: this MUST make
-            // apps primary in the combined states, or .otherAppsFirst renders
-            // identically to .awakeFirst in every state.
-            cupIsPrimary = cupActive && !holders.apps
+        case .awakeFirst:     cupIsPrimary = true
+        case .otherAppsFirst: cupIsPrimary = !holders.apps   // apps win the spotlight
         }
 
         if cupIsPrimary {
-            // Cup primary; apps (if also holding) is the corner dot.
             let primary = Mark(symbol: cupFilled, color: cupColor, filled: true)
-            let badge: BadgeMark? = holders.apps
-                ? BadgeMark(symbol: appsDot, color: p.app, scale: badgeScale)
-                : nil
-            return compose(primary: primary, badge: badge, corner: fixedCorner)
+            guard holders.apps else { return compose(primary: primary, badge: nil, corner: fixedCorner) }
+            // Cup primary; app is the corner mark (dot, or mini icon).
+            return composeAppCorner(primary: primary, appsIcon: appsIcon,
+                                    layout: layout, app: p.app)
         } else {
-            // Apps primary (full-size); cup (if active) becomes the corner badge.
-            let cupBadge: BadgeMark? = cupActive
-                ? BadgeMark(symbol: cupFilled, color: cupColor, scale: badgeScale)
+            // App primary; the cup holder is the secondary — a corner pip (dot
+            // main) or an accent ring (icon main), tinted by the cup holder, or
+            // dropped entirely when showSecondary is off.
+            let secondary: NSColor? = layout.showSecondary
+                ? (cupColor ?? labelColorForCurrentAppearance())
                 : nil
-            // Real app icon when supplied + resolvable, else the colored dot.
-            if let appsIcon {
-                return composeAppIcon(appsIcon, badge: cupBadge, corner: fixedCorner)
-            }
-            let primary = Mark(symbol: appsDot, color: p.app, filled: true)
-            return compose(primary: primary, badge: cupBadge, corner: fixedCorner)
+            return appPrimary(appsIcon: appsIcon, layout: layout, app: p.app, secondary: secondary)
         }
     }
 
@@ -204,8 +208,8 @@ enum StatusIconRenderer {
     /// canvas is ~1.4:1, and filling its full width would stretch a square app
     /// icon into a pill. Retina-safe: drawn via the NSImage block form so the
     /// icon's @2x rep is preserved.
-    private static func composeAppIcon(_ icon: NSImage, badge: BadgeMark?,
-                                       corner: IconCorner) -> NSImage {
+    private static func composeAppIcon(_ icon: NSImage, accentRing: NSColor? = nil,
+                                       badge: BadgeMark?, corner: IconCorner) -> NSImage {
         let canvas = symbolImage(cupFilled, color: .black).size
         let side = canvas.height
         let square = NSRect(x: (canvas.width - side) / 2, y: 0, width: side, height: side)
@@ -217,15 +221,84 @@ enum StatusIconRenderer {
             path.addClip()
             icon.draw(in: square, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.current?.restoreGraphicsState()
-            // Subtle separation edge so a dark/busy icon still reads on the bar.
+            // Subtle grey separation edge so a dark/busy icon reads on the bar.
             NSColor(white: 0.5, alpha: 1).setStroke()
             path.lineWidth = 1
             path.stroke()
+            // When a cup holder is also active, frame the icon with a thin colored
+            // ring — this IS the "you're also holding" mark (it frames without
+            // occluding the icon, unlike a corner pip).
+            if let accentRing {
+                accentRing.setStroke()
+                path.lineWidth = 1.5
+                path.stroke()
+            }
             return true
         }
         iconImage.isTemplate = false
         guard let badge else { return iconImage }
         return overlayBadge(on: iconImage, badge: badge, corner: corner)
+    }
+
+    // MARK: - Slot composition (one grammar: primary + optional corner mark)
+
+    /// Render a primary symbol Mark to an opaque (non-template) image, resolving a
+    /// nil color to the bar's label color — for composites that carry a corner.
+    private static func renderPrimaryGlyph(_ primary: Mark) -> NSImage {
+        symbolImage(primary.symbol, color: primary.color ?? labelColorForCurrentAppearance())
+    }
+
+    /// A cup (or idle outline cup) primary with the app as the small corner mark:
+    /// a colored dot, or — when appIconCorner is on — a mini real-app icon.
+    private static func composeAppCorner(primary: Mark, appsIcon: NSImage?,
+                                         layout: IconLayout, app: NSColor) -> NSImage {
+        if layout.appIconCorner, let appsIcon {
+            return overlayIconBadge(on: renderPrimaryGlyph(primary), icon: appsIcon,
+                                    scale: badgeScale, corner: fixedCorner)
+        }
+        let badge = BadgeMark(symbol: appsDot, color: app, scale: badgeScale)
+        return compose(primary: primary, badge: badge, corner: fixedCorner)
+    }
+
+    /// The app as the full-size primary mark — a colored dot, or its real icon.
+    /// `secondary`, when non-nil, is the cup holder's color shown as a corner pip
+    /// (dot main) or an accent ring around the icon (icon main).
+    private static func appPrimary(appsIcon: NSImage?, layout: IconLayout,
+                                   app: NSColor, secondary: NSColor?) -> NSImage {
+        if layout.appIconMain, let appsIcon {
+            return composeAppIcon(appsIcon, accentRing: secondary, badge: nil, corner: fixedCorner)
+        }
+        let primary = Mark(symbol: appsDot, color: app, filled: true)
+        let badge: BadgeMark? = secondary.map { BadgeMark(symbol: appsDot, color: $0, scale: badgeScale) }
+        return compose(primary: primary, badge: badge, corner: fixedCorner)
+    }
+
+    /// Like overlayBadge, but the corner mark is a squircle-masked real app icon
+    /// (used when appIconCorner is on and the APP occupies the corner).
+    private static func overlayIconBadge(on primaryImage: NSImage, icon: NSImage,
+                                         scale: CGFloat, corner: IconCorner) -> NSImage {
+        let canvas = primaryImage.size
+        let badgePt = pointSize * scale
+        let iconSize = NSSize(width: badgePt, height: badgePt)
+        let composed = NSImage(size: canvas, flipped: false) { _ in
+            primaryImage.draw(in: NSRect(origin: .zero, size: canvas),
+                              from: .zero, operation: .sourceOver, fraction: 1)
+            let iconRect = cornerRect(canvas: canvas, glyph: iconSize,
+                                      inset: max(1, badgePt * 0.15), corner: corner)
+            let radius = iconRect.width * 0.225
+            // Grey separation rim just outside the icon squircle.
+            let rimRect = iconRect.insetBy(dx: -1.2, dy: -1.2)
+            NSColor(white: 0.5, alpha: 1).setFill()
+            NSBezierPath(roundedRect: rimRect, xRadius: radius + 1.2, yRadius: radius + 1.2).fill()
+            let path = NSBezierPath(roundedRect: iconRect, xRadius: radius, yRadius: radius)
+            NSGraphicsContext.current?.saveGraphicsState()
+            path.addClip()
+            icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.current?.restoreGraphicsState()
+            return true
+        }
+        composed.isTemplate = false
+        return composed
     }
 
     /// The effective label color for the menu bar's current appearance, so a
