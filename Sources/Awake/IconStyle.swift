@@ -1,22 +1,9 @@
 import Foundation
 
-// MARK: - Icon categories & active-holder set
+// MARK: - Active-holder set
 
-/// The holder categories the menu-bar icon can represent.
-enum IconCategory: String, Codable, CaseIterable, Sendable, Identifiable {
-    case thisApp = "This App"
-    case you     = "You"
-    case apps    = "Apps"
-
-    var id: String { rawValue }
-
-    /// This App and You both render in the "cup" slot; Apps is the "shape" slot.
-    var isCup: Bool { self != .apps }
-}
-
-/// Which categories are actively holding sleep right now — fed to the renderer
-/// independent of any display precedence (so the layout, not a baked-in rule,
-/// decides what's shown).
+/// Which holders are actively keeping the Mac awake right now — fed to the
+/// renderer. (`thisApp`/`you` map to the cup slot; `apps` to the dot/icon slot.)
 struct IconHolders: Sendable, Equatable {
     var thisApp: Bool = false
     var you: Bool = false
@@ -24,14 +11,6 @@ struct IconHolders: Sendable, Equatable {
 
     var any: Bool { thisApp || you || apps }
     var cupActive: Bool { thisApp || you }
-
-    func isActive(_ c: IconCategory) -> Bool {
-        switch c {
-        case .thisApp: return thisApp
-        case .you:     return you
-        case .apps:    return apps
-        }
-    }
 }
 
 // MARK: - Badge corner (internal — fixed top-right, no longer user-chosen)

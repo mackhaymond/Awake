@@ -229,6 +229,7 @@ final class AppPreferences {
         iconColorCLI  = .defaultCLI
         iconColorApp  = .defaultApp
         iconColorIdle = nil          // back to adaptive system color
+        showAppIconForApps = false   // restore the default Apps mark (a dot)
     }
 
     /// Resolved palette for the renderer. A nil slot means "render that glyph as
@@ -292,9 +293,6 @@ final class AppPreferences {
         }
     }
 
-    func resetIconLayout() {
-        iconLayout = IconLayout()
-    }
 }
 
 /// Minimal decoder for the pre-focus IconLayout blob, used only to migrate an

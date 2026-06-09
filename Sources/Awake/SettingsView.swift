@@ -123,7 +123,7 @@ struct SettingsView: View {
                 colorRow("Apps", binding: bindApp)
                     .help("The colored dot shown for other apps — and the fallback when an app's icon can't load.")
                 Toggle("Show the app's icon instead of a dot", isOn: $model.prefs.showAppIconForApps)
-                    .help("When another app is the main icon, show that app's real icon. A colored dot is still used for the small corner badge and as a fallback.")
+                    .help("When another app is the main icon, show that app's real icon — the app that has been keeping your Mac awake the longest. A colored dot is still used for the small corner badge and as a fallback.")
                 idleColorRow
                 HStack {
                     Spacer()
@@ -209,7 +209,9 @@ struct SettingsView: View {
                     .help("Menu-bar icon when: \(combo.label)")
                 }
             }
-            Text("A coffee cup means Awake or you are holding sleep; a colored dot (or app icon) means another app is.")
+            Text(model.prefs.showAppIconForApps
+                 ? "A coffee cup means Awake or you are holding sleep; an app icon means another app is. The preview uses Awake's own icon as a stand-in — the menu bar shows each app's real icon."
+                 : "A coffee cup means Awake or you are holding sleep; a colored dot means another app is.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

@@ -199,20 +199,23 @@ enum StatusIconRenderer {
 
     /// Compose a full-size REAL app icon (squircle-masked, full color) as the
     /// primary mark, with an optional corner cup badge. The canvas matches the
-    /// symbol states (same reference size) so the bar baseline doesn't jump
-    /// between the icon state and the dot/cup states. Retina-safe: drawn via the
-    /// NSImage block form so the icon's @2x rep is preserved.
+    /// symbol states (so the bar baseline / width don't jump), but the icon is
+    /// drawn into a centered SQUARE the height of the canvas — the cup symbol's
+    /// canvas is ~1.4:1, and filling its full width would stretch a square app
+    /// icon into a pill. Retina-safe: drawn via the NSImage block form so the
+    /// icon's @2x rep is preserved.
     private static func composeAppIcon(_ icon: NSImage, badge: BadgeMark?,
                                        corner: IconCorner) -> NSImage {
         let canvas = symbolImage(cupFilled, color: .black).size
-        let radius = canvas.width * 0.225   // squircle-ish, matches the app tile
+        let side = canvas.height
+        let square = NSRect(x: (canvas.width - side) / 2, y: 0, width: side, height: side)
+            .insetBy(dx: 0.5, dy: 0.5)
+        let radius = square.width * 0.225   // squircle-ish, matches the app tile
         let iconImage = NSImage(size: canvas, flipped: false) { _ in
-            let rect = NSRect(origin: .zero, size: canvas)
-            let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
-                                    xRadius: radius, yRadius: radius)
+            let path = NSBezierPath(roundedRect: square, xRadius: radius, yRadius: radius)
             NSGraphicsContext.current?.saveGraphicsState()
             path.addClip()
-            icon.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+            icon.draw(in: square, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.current?.restoreGraphicsState()
             // Subtle separation edge so a dark/busy icon still reads on the bar.
             NSColor(white: 0.5, alpha: 1).setStroke()
