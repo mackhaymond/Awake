@@ -203,23 +203,73 @@ enum DebugDump {
         let gradient = NSGradient(starting: top, ending: bottom)
         gradient?.draw(in: path, angle: -90)
 
-        // Cup glyph, white, centered, ~52% of the tile.
-        let glyphPt = tile.width * 0.52
-        if let cup = NSImage(systemSymbolName: "cup.and.saucer.fill",
-                             accessibilityDescription: "Awake"),
-           let tinted = cup.withSymbolConfiguration(
-               NSImage.SymbolConfiguration(pointSize: glyphPt, weight: .regular)
-                   .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))) {
-            tinted.isTemplate = false
-            let gw = tinted.size.width, gh = tinted.size.height
-            let rect = NSRect(x: tile.midX - gw / 2,
-                              y: tile.midY - gh / 2,
-                              width: gw, height: gh)
-            tinted.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
-        }
+        // Cup-and-saucer, white, centered — ORIGINAL artwork drawn with
+        // NSBezierPath, NOT an SF Symbol. Apple's SF Symbols license forbids
+        // baking a symbol into an app icon; runtime SF Symbol use in the menu
+        // bar / list rows is permitted and is unchanged. The silhouette echoes
+        // the menu-bar cup for brand continuity without copying Apple's glyph.
+        let boxW = tile.width * 0.60
+        let boxH = tile.width * 0.46
+        let box = NSRect(x: tile.midX - boxW / 2, y: tile.midY - boxH / 2,
+                         width: boxW, height: boxH)
+        drawCupAndSaucer(in: box, color: .white)
 
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
+    }
+
+    /// Draw an original filled cup-and-saucer silhouette inside `box`, in
+    /// `color`. Used only for the generated app icon (AppIcon.icns) so that no
+    /// Apple SF Symbol is redistributed in the icon asset. A wide shallow saucer
+    /// ellipse, a slightly tapered cup body with a rounded base and a convex
+    /// elliptical rim, and an open ring handle on the right.
+    private static func drawCupAndSaucer(in box: NSRect, color: NSColor) {
+        color.set()
+        let w = box.width, h = box.height
+        let cx = box.midX
+
+        // Saucer: a wide, shallow ellipse along the bottom.
+        let saucerH = h * 0.18
+        NSBezierPath(ovalIn: NSRect(x: box.minX, y: box.minY, width: w, height: saucerH)).fill()
+
+        // Cup body: tapers slightly toward the base, sits on the saucer.
+        let cupTopW = w * 0.56
+        let cupBotW = w * 0.44
+        let bottomY = box.minY + saucerH * 0.55          // seated in the saucer
+        let cupTop  = box.maxY - h * 0.04
+        let corner  = cupBotW * 0.30                     // rounded base corners
+        let rimH    = h * 0.12                           // convex rim bump
+
+        let leftX  = cx - cupBotW / 2
+        let rightX = cx + cupBotW / 2
+        let topL = NSPoint(x: cx - cupTopW / 2, y: cupTop)
+        let topR = NSPoint(x: cx + cupTopW / 2, y: cupTop)
+
+        let body = NSBezierPath()
+        body.move(to: topL)
+        body.line(to: NSPoint(x: leftX, y: bottomY + corner))
+        body.appendArc(from: NSPoint(x: leftX, y: bottomY),
+                       to:   NSPoint(x: leftX + corner, y: bottomY), radius: corner)
+        body.line(to: NSPoint(x: rightX - corner, y: bottomY))
+        body.appendArc(from: NSPoint(x: rightX, y: bottomY),
+                       to:   NSPoint(x: rightX, y: bottomY + corner), radius: corner)
+        body.line(to: topR)
+        body.curve(to: topL,                             // elliptical rim, seen from above
+                   controlPoint1: NSPoint(x: cx + cupTopW * 0.32, y: cupTop + rimH),
+                   controlPoint2: NSPoint(x: cx - cupTopW * 0.32, y: cupTop + rimH))
+        body.close()
+        body.fill()
+
+        // Handle: a thick open ring whose ends tuck into the cup's right wall.
+        let cupMidY = (bottomY + cupTop) / 2 + h * 0.04
+        let handleR = h * 0.19
+        let wallX = cx + cupTopW * 0.42                  // the wall at handle height
+        let handle = NSBezierPath()
+        handle.appendArc(withCenter: NSPoint(x: wallX, y: cupMidY),
+                         radius: handleR, startAngle: -82, endAngle: 82)
+        handle.lineWidth = h * 0.085
+        handle.lineCapStyle = .round
+        handle.stroke()
     }
 
     private static func draw(_ image: NSImage, in cell: NSRect, templateTint: NSColor) {
