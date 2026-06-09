@@ -83,9 +83,10 @@ enum Bucket: String, CaseIterable, Codable, Sendable {
 /// ALL candidate identity keys for a holder, in precedence order (most stable
 /// first). Used so an override / seen-registry entry stored under ANY one of a
 /// holder's tokens still matches the same holder on a later refresh even when a
-/// different resolution path resolved it (bug #21 — multi-token match).
+/// different resolution path resolved it (multi-token match).
 ///
-/// Why several keys, not one (bug #21, primary defect): `AppIdentityResolver`'s
+/// Why several keys, not one — the core matching defect this guards against:
+/// `AppIdentityResolver`'s
 /// layered fallback can resolve the SAME physical holder differently across
 /// refreshes — with a live PID it yields a bundleID + executable path, but once
 /// the PID dies and the assertion carries no BundlePath / no bundle-id token in
@@ -128,7 +129,7 @@ func identityKey(bundleID: String?,
                  displayName: displayName, processName: processName)[0]
 }
 
-/// Look up a holder's override across ALL its identity tokens (bug #21): an
+/// Look up a holder's override across ALL its identity tokens: an
 /// override stored under one token (e.g. the bundleID, captured while the PID was
 /// live) still matches a later row that only resolves to another token (e.g.
 /// `proc:` after the PID died). Returns the first token that has an override.
@@ -159,7 +160,7 @@ struct SeenHolder: Codable, Equatable, Sendable {
     var bundleID: String? = nil
     var iconPath: String? = nil
     /// ALL identity tokens this holder resolved to when last seen, so the
-    /// Categories view can match an override stored under ANY token (bug #21)
+    /// Categories view can match an override stored under ANY token
     /// even after the holder goes inactive — mirroring how active rows match.
     /// Optional + defaulted so registries persisted before this field still load.
     var tokens: [String]? = nil
@@ -232,8 +233,8 @@ struct AssertionRow: Identifiable, Sendable {
                           displayName: title, processName: rawName)
     }
 
-    /// All identity tokens for this holder, for multi-token override matching
-    /// (bug #21): a stored override under any token still matches the row.
+    /// All identity tokens for this holder, for multi-token override matching:
+    /// a stored override under any token still matches the row.
     var identityKeys: [String] {
         Awake.identityKeys(bundleID: bundleID, executablePath: executablePath,
                            displayName: title, processName: rawName)

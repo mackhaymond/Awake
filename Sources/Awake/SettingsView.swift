@@ -465,7 +465,7 @@ struct CategoriesSettingsView: View {
             // any of its tokens — so no extra cross-token dedup is needed here
             // (and would be unsafe: distinct caffeinate holds share `proc:caffeinate`).
             let tokens = holder.tokens ?? [key]
-            // Multi-token override match (bug #21): an override stored under ANY of
+            // Multi-token override match: an override stored under ANY of
             // the holder's tokens applies. Locked: a stored override INTO This App
             // can never take effect, so ignore one.
             let stored = tokens.lazy.compactMap { model.prefs.categoryOverrides[$0] }.first
@@ -611,7 +611,7 @@ struct CategoriesSettingsView: View {
         }
     }
 
-    /// Multi-token override binding (bug #21): READS the override across all of a
+    /// Multi-token override binding: READS the override across all of a
     /// holder's identity tokens (so a value stored under any token shows up), and
     /// WRITES under the canonical key after clearing any value stored under the
     /// holder's OTHER tokens — so changing/clearing the override never leaves a

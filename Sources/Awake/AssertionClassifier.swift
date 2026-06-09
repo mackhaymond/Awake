@@ -37,7 +37,7 @@ enum AssertionClassifier {
         let bundleID: String?
         let iconBundleID: String?
         let sfFallback: String?
-        // Stable identity anchor (bug #21): survives PID death whenever the
+        // Stable identity anchor: survives PID death whenever the
         // assertion carried a BundlePath or the PID was live when resolved.
         // Caffeinate rows are identified by their command line, not an exec path.
         let executablePath: String? = a.ownerProcName == "caffeinate" ? nil : identity.executablePath
@@ -73,7 +73,7 @@ enum AssertionClassifier {
 
         // Apply any manual override. `natural` is what the automatic sorting
         // chose; `effective` is what we actually display in. The override is
-        // matched across ALL of the holder's identity tokens (bug #21), so a
+        // matched across ALL of the holder's identity tokens, so a
         // value stored under the bundleID while the PID was live still matches a
         // later row that only resolves to its exec path / proc name once the PID
         // dies — instead of silently reverting to Auto.
