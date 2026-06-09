@@ -23,6 +23,9 @@ enum StatusIconRenderer {
     private static let cupFilled  = "cup.and.saucer.fill"
     private static let appsDot    = "circle.fill"
     private static let badgeScale: CGFloat = 0.50
+    /// A real app icon in the corner is drawn a bit larger than the dot badge and
+    /// with no separation rim — it needs the extra size to stay recognizable.
+    private static let appCornerIconScale: CGFloat = 0.62
     private static let fixedCorner: IconCorner = .topRight
 
     // MARK: - Primary entry point (holders + layout)
@@ -260,7 +263,7 @@ enum StatusIconRenderer {
                                          layout: IconLayout, app: NSColor) -> NSImage {
         if layout.appIconCorner, let appsIcon {
             return overlayIconBadge(on: renderPrimaryGlyph(primary), icon: appsIcon,
-                                    scale: badgeScale, corner: fixedCorner)
+                                    scale: appCornerIconScale, corner: fixedCorner)
         }
         let badge = BadgeMark(symbol: appsDot, color: app, scale: badgeScale)
         return compose(primary: primary, badge: badge, corner: fixedCorner)
@@ -292,10 +295,7 @@ enum StatusIconRenderer {
             let iconRect = cornerRect(canvas: canvas, glyph: iconSize,
                                       inset: max(1, badgePt * 0.15), corner: corner)
             let radius = iconRect.width * 0.225
-            // Grey separation rim just outside the icon squircle.
-            let rimRect = iconRect.insetBy(dx: -1.2, dy: -1.2)
-            NSColor(white: 0.5, alpha: 1).setFill()
-            NSBezierPath(roundedRect: rimRect, xRadius: radius + 1.2, yRadius: radius + 1.2).fill()
+            // No separation rim — the app icon sits clean in the corner.
             let path = NSBezierPath(roundedRect: iconRect, xRadius: radius, yRadius: radius)
             NSGraphicsContext.current?.saveGraphicsState()
             path.addClip()
