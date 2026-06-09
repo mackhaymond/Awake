@@ -198,16 +198,20 @@ struct SettingsView: View {
         .pickerStyle(.radioGroup)
     }
 
-    /// All 8 holder combinations rendered through the REAL renderer with the
-    /// current layout + palette, so the preview reflects every choice live.
+    /// All 8 holder combinations, laid out as a 4-column matrix: the TOP row is
+    /// each "base" state (no other app); the cell directly BELOW it adds an app to
+    /// that same base. So every column shares one primary mark and the bottom row
+    /// just adds the app on top — top/bottom of a column always line up.
     private static let previewCombos: [(label: String, holders: IconHolders)] = [
+        // Top row — base (no other app).
         ("Idle", IconHolders()),
         ("This app", IconHolders(thisApp: true)),
         ("You", IconHolders(you: true)),
+        ("This app + You", IconHolders(thisApp: true, you: true)),
+        // Bottom row — the same base, plus an app.
         ("An app", IconHolders(apps: true)),
         ("This app + an app", IconHolders(thisApp: true, apps: true)),
         ("You + an app", IconHolders(you: true, apps: true)),
-        ("This app + You", IconHolders(thisApp: true, you: true)),
         ("This app + You + an app", IconHolders(thisApp: true, you: true, apps: true)),
     ]
 
