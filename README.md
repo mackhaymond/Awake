@@ -35,33 +35,49 @@ Awake walks each `caffeinate` process's **parent/ancestor chain** (`sysctl` +
 Shells, `tmux`, `login`, `sudo`, etc. are treated as pass-through; generic
 runtimes (`node`, `electron`…) are bridged up to the owning `.app`.
 
-The **menu-bar icon** encodes two axes independently — **shape** = is an app involved,
-**color/fill** = are *you* holding it — so you can always tell whether you have it
-caffeinated yourself even when an app is also keeping it awake:
+The **menu-bar icon** is composed from a **primary mark** plus an optional small
+**top-right corner mark**, so you can always tell who is holding sleep open even when
+both you and an app are:
 
-| State | Shape | Default color |
+- a **cup** stands for *your* hold — **filled** while you're holding (via Awake or a CLI
+  `caffeinate`), **outline** when the Mac can sleep;
+- a **colored dot** — or, optionally, the **real icon** of the app — stands for *another
+  app* holding sleep.
+
+When both you and an app hold at once, one is the primary mark and the other shrinks to
+the corner. Which goes in front is your choice in **Settings → Appearance → Icon Style**:
+
+| “Show in front” | You **and** an app | **Only** an app |
 |---|---|---|
-| idle — Mac can sleep | outline cup | adaptive |
-| you via Awake only | filled cup | adaptive (template) |
-| you via CLI only | filled cup | adaptive (template) |
-| an app only | outline cup **+ corner badge** | orange badge |
-| you (Awake) + an app | filled cup **+ corner badge** | orange badge |
-| you (CLI) + an app | filled cup **+ corner badge** | orange badge |
+| **Awake** (default) | your cup is primary, the app rides in the corner | a cup with the app in the corner — or just the app, your pick |
+| **other apps** | the app's icon is primary, your cup shrinks to a corner pip/ring | the app on its own |
 
-Precedence is Awake > CLI when both hold. The combined states draw the app-colored
-circle as a small corner badge (with a neutral separation ring) over your cup, so your
-own hold stays visible. By default your own holds render as adaptive **template** glyphs
-that follow the menu bar's light/dark appearance; set a custom color to opt out.
+Your own holds default to adaptive **template** glyphs that follow the menu bar's
+light/dark appearance; the app mark uses the configurable **Apps** color (a dot) or the
+app's real icon. When *This App* and *You (CLI)* both hold, the cup takes the *This App*
+color.
 
-### Customizing the colors
+![Awake's menu-bar icon across every holder combination (columns) and icon-style option (rows)](docs/states.png)
 
-**Settings → Appearance** has a live preview of all six states and color wells for
-the four base colors (This App / You / Apps / Idle). The self/CLI/idle slots default to
-*adaptive* template glyphs that follow the menu-bar appearance; pick a custom color or
-revert. A "Reset Icon Colors" button restores the shipped palette. Colors persist in
-`UserDefaults` and the menu-bar glyph re-renders immediately.
+*Columns: idle · this app · you · an app · this app + app · you + app · this app + you · all. Rows: the “Show in front” / lone-app / app-icon options.*
 
-Render the current palette's states to a PNG: `Awake.app/Contents/MacOS/Awake --icons /tmp/states.png`
+### Customizing the appearance
+
+**Settings → Appearance** has two parts, each with a live preview of all eight holder
+combinations:
+
+- **Icon Style** — pick what goes *in front* when you and an app both hold (Awake's cup
+  or the app), what to show when only an app holds, whether to use an app's real icon (as
+  the main mark or just in the corner), and whether to mark who else is holding. A
+  **Reset Icon Style** button restores the defaults.
+- **Colors** — color wells for the four base colors (This App / You / Apps / Idle). The
+  This App / You / Idle slots default to *adaptive* template glyphs that follow the
+  menu-bar appearance; pick a custom color or revert. A **Reset Colors** button restores
+  the shipped palette.
+
+Everything persists in `UserDefaults` and the menu-bar glyph re-renders immediately.
+
+Render the current settings' states to a PNG: `Awake.app/Contents/MacOS/Awake --icons /tmp/states.png`
 
 ## Controls
 
@@ -79,19 +95,26 @@ Render the current palette's states to a PNG: `Awake.app/Contents/MacOS/Awake --
 ## Build & run
 
 ```sh
-cd ~/Projects/Awake
+git clone https://github.com/mackhaymond/Awake.git
+cd Awake
 bash build.sh          # swift build -c release → assembles + ad-hoc-signs Awake.app
 open Awake.app         # registers with LaunchServices; menu-bar icon appears
 ```
 
-Requires the Swift toolchain (Xcode). macOS 14+ (`LSMinimumSystemVersion`); built/tested on macOS 26.
+Requires the Swift 6 toolchain (Xcode 16+). macOS 14+ (`LSMinimumSystemVersion`); built/tested on macOS 26.
+
+`build.sh` **ad-hoc signs** the app (no Developer ID, not notarized), which is fine for
+running it on the Mac that built it. If you move the bundle to another Mac, macOS
+Gatekeeper will flag it as from an unidentified developer — right-click → **Open** once,
+or run `xattr -dr com.apple.quarantine Awake.app`. Building from source is the supported
+path.
 
 ## Headless diagnostics
 
 ```sh
 Awake.app/Contents/MacOS/Awake --dump            # print the classified buckets and exit
 Awake.app/Contents/MacOS/Awake --selftest        # verify the caffeination lifecycle (create → detect → release)
-Awake.app/Contents/MacOS/Awake --icons [path]    # render all icon states to a PNG
+Awake.app/Contents/MacOS/Awake --icons <path>    # render all icon states to a PNG
 Awake.app/Contents/MacOS/Awake --appicon <dir>   # render an AppIcon.iconset (used by build.sh)
 Awake.app/Contents/MacOS/Awake --help            # show usage
 ```
@@ -110,7 +133,7 @@ Package.swift            executableTarget "Awake", no dependencies
 build.sh                 builds + bundles + ad-hoc signs Awake.app
 Info.plist               reference plist (build.sh generates the authoritative one)
 Sources/Awake/
-  AwakeApp.swift           @main entry (+ --dump/--selftest/--icons/--appicon/--help), MenuBarExtra + colored icon + app delegate
+  AwakeApp.swift           @main entry (+ --dump/--selftest/--icons/--appicon/--help), MenuBarExtra + composed status icon + app delegate
   AwakeModel.swift         coordinator: caffeination, hotkey, login item, refresh timer
   AssertionReader.swift    reads assertions via IOKit (IOPMCopyAssertionsByProcess), pmset fallback
   AssertionClassifier.swift buckets holders + derives friendly reasons
@@ -124,3 +147,16 @@ Sources/Awake/
   SettingsView.swift       tabbed settings (General / Appearance / Categories / Advanced / About)
   DebugDump.swift          --dump / --selftest implementations
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 Mack Haymond.
+
+The menu-bar and list glyphs are rendered at runtime from Apple **SF Symbols**, which
+are provided by Apple and governed by the [Apple SF Symbols license](https://developer.apple.com/fonts/) —
+they are not covered by this project's MIT license. The app icon is original artwork and
+does not use an SF Symbol.
+
+Third-party product and company names (Claude Code, Arc, ChatGPT, WezTerm, iTerm,
+Ghostty, kitty, Ice, Bartender, …) are trademarks of their respective owners and are
+referenced here only for identification and interoperability.
