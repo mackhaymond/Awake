@@ -116,8 +116,14 @@ struct SettingsView: View {
                 focusControl
                 loneAppControl
                 Toggle("Show an app's real icon as the main mark", isOn: Binding(
-                    // Mandated on when "Show other apps in front" is selected.
-                    get: { layout.appIconMain || layout.focus == .otherAppsFirst },
+                    // Mandated ON under "Show other apps in front"; forced OFF when
+                    // lone apps go in the corner (the app is then never the main
+                    // mark); otherwise the user's stored choice.
+                    get: {
+                        if layout.focus == .otherAppsFirst { return true }
+                        if layout.loneApp == .cupWithDot { return false }
+                        return layout.appIconMain
+                    },
                     set: { v in
                         var l = model.prefs.iconLayout
                         l.appIconMain = v
@@ -125,10 +131,9 @@ struct SettingsView: View {
                     }
                 ))
                 .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot. Always on when “Show other apps in front” is selected.")
-                // Locked on under apps-first; inert when an app is never the main
-                // mark (cup always in front AND lone apps shown in the corner).
-                .disabled(layout.focus == .otherAppsFirst
-                          || (layout.focus == .awakeFirst && layout.loneApp == .cupWithDot))
+                // Locked: on under apps-first (mandated); off when lone apps show in
+                // the corner (the app is never the main mark there).
+                .disabled(layout.focus == .otherAppsFirst || layout.loneApp == .cupWithDot)
                 Toggle("Show an app's real icon in the corner", isOn: layoutBinding(\.appIconCorner))
                     .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
                     // Inert when an app is always the main mark (it's never in the corner).
