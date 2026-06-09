@@ -92,6 +92,13 @@ Render the current settings' states to a PNG: `Awake.app/Contents/MacOS/Awake --
 - **Categories** — manually override any holder's bucket (Settings → Categories);
   overrides persist and flow into the dropdown and the menu-bar icon.
 
+## Install
+
+Download the latest **Awake.app** from the
+[Releases page](https://github.com/mackhaymond/Awake/releases), unzip, and open it.
+Builds are ad-hoc signed (not notarized), so on first launch right-click → **Open**, or
+run `xattr -dr com.apple.quarantine Awake.app`.
+
 ## Build & run
 
 ```sh
@@ -118,13 +125,6 @@ Awake.app/Contents/MacOS/Awake --icons <path>    # render all icon states to a P
 Awake.app/Contents/MacOS/Awake --appicon <dir>   # render an AppIcon.iconset (used by build.sh)
 Awake.app/Contents/MacOS/Awake --help            # show usage
 ```
-
-## Note: crowded menu bars & the notch
-
-macOS hides menu-bar items that don't fit (behind the notch on notched MacBooks).
-If Awake's icon doesn't appear, your bar is full — use a menu-bar manager such as
-[Ice](https://github.com/jordanbaird/Ice) (free, open source) or Bartender, or
-remove other items.
 
 ## Layout
 
