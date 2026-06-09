@@ -138,10 +138,20 @@ struct SettingsView: View {
                     .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
                     // Inert when an app is always the main mark (it's never in the corner).
                     .disabled(layout.focus == .otherAppsFirst && layout.loneApp == .appFull)
-                Toggle("When an app is in front, mark who else is holding", isOn: layoutBinding(\.showSecondary))
-                    .help("When another app is the main icon and Awake or you are also holding, add a small colored mark — a corner dot, or a thin ring around the app's icon. Turn off for a clean app-only icon.")
-                    // Only applies when an app can be in front.
-                    .disabled(layout.focus == .awakeFirst)
+                Toggle("When an app is in front, mark who else is holding", isOn: Binding(
+                    // Editable only under apps-first (where the cup holder becomes
+                    // the corner secondary). Under "Show Awake in front" both
+                    // holders are always shown (cup primary + app corner), so it's
+                    // on + locked.
+                    get: { layout.focus == .otherAppsFirst ? layout.showSecondary : true },
+                    set: { v in
+                        var l = model.prefs.iconLayout
+                        l.showSecondary = v
+                        model.prefs.iconLayout = l
+                    }
+                ))
+                .help("When another app is the main icon and Awake or you are also holding, add a small colored mark — a corner dot, or a thin ring around the app's icon. Turn off for a clean app-only icon.")
+                .disabled(layout.focus == .awakeFirst)
                 iconStylePreview
                 HStack {
                     Spacer()
