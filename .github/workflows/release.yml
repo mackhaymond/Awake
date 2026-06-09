@@ -1,0 +1,93 @@
+name: Release
+
+# Cut a release by pushing a version tag:
+#   git tag v1.2.3 && git push origin v1.2.3
+# or trigger manually from the Actions tab (creates the tag at the chosen ref).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build & release (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write   # create the GitHub Release and upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & publish app bundle
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin the Swift 6 toolchain (see ci.yml for why macos-14 defaults break).
+      - name: Select Xcode 16 (Swift 6)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Resolve version from tag
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG"            >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}"    >> "$GITHUB_OUTPUT"   # strip leading 'v'
+
+      # Stamp CFBundleShortVersionString from the tag and CFBundleVersion from
+      # the run number (monotonic), then assemble + ad-hoc sign Awake.app.
+      - name: Build app bundle
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          BUILD: ${{ github.run_number }}
+        run: bash build.sh
+
+      # Zip the bundle with ditto so symlinks / the ad-hoc signature survive.
+      - name: Package
+        id: pkg
+        run: |
+          ASSET="Awake-${{ steps.ver.outputs.tag }}.zip"
+          ditto -c -k --keepParent Awake.app "$ASSET"
+          shasum -a 256 "$ASSET" | tee "$ASSET.sha256"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes
+        id: notes
+        run: |
+          cat > notes.md <<'EOF'
+          ### Install
+
+          1. Download `Awake-${{ steps.ver.outputs.tag }}.zip` below and unzip it.
+          2. Move **Awake.app** to `/Applications` (optional) and open it — the cup appears in your menu bar.
+
+          The build is **ad-hoc signed and not notarized**, so on first launch macOS
+          Gatekeeper will warn it's from an unidentified developer. Right-click the app →
+          **Open** once, or run:
+
+          ```sh
+          xattr -dr com.apple.quarantine Awake.app
+          ```
+
+          `Awake-${{ steps.ver.outputs.tag }}.zip.sha256` contains the checksum.
+
+          Requires macOS 14+.
+          EOF
+
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          ASSET="${{ steps.pkg.outputs.asset }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+          else
+            gh release create "$TAG" "$ASSET" "$ASSET.sha256" \
+              --title "Awake $TAG" \
+              --notes-file notes.md
+          fi

@@ -3,8 +3,9 @@ set -euo pipefail
 
 APP_NAME="Awake"
 BUNDLE_ID="com.mackhaymond.Awake"
-VERSION="1.0"
-BUILD="1"
+# Overridable so the release workflow can stamp the bundle from the git tag.
+VERSION="${VERSION:-1.0}"
+BUILD="${BUILD:-1}"
 MIN_OS="14.0"
 DEST="${APP_NAME}.app"
 
