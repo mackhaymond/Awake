@@ -23,9 +23,9 @@ enum StatusIconRenderer {
     private static let cupFilled  = "cup.and.saucer.fill"
     private static let appsDot    = "circle.fill"
     private static let badgeScale: CGFloat = 0.50
-    /// A real app icon in the corner is drawn a bit larger than the dot badge and
-    /// with no separation rim — it needs the extra size to stay recognizable.
-    private static let appCornerIconScale: CGFloat = 0.62
+    /// A real app icon in the corner is drawn larger than the dot badge and with
+    /// no separation rim — it needs the extra size to stay recognizable.
+    private static let appCornerIconScale: CGFloat = 0.72
     private static let fixedCorner: IconCorner = .topRight
 
     // MARK: - Primary entry point (holders + layout)
@@ -224,23 +224,13 @@ enum StatusIconRenderer {
             path.addClip()
             icon.draw(in: square, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.current?.restoreGraphicsState()
-            // Grey separation edge so any icon reads against the bar.
-            NSColor(white: 0.5, alpha: 1).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-            // When a cup holder is also active, frame the icon with a colored ring
-            // — the "you're also holding" mark (frames without occluding, unlike a
-            // corner pip). Drawn just INSIDE the edge at 2pt so it reads as a
-            // deliberate frame distinct from the grey separation rim (matters most
-            // for the default near-white This-App color on a light bar).
+            // No grey separation border — the app icon sits clean. When a cup
+            // holder is also active, frame the icon with a colored ring at the edge
+            // — the "you're also holding" mark (frames without occluding it).
             if let accentRing {
-                let inner = square.insetBy(dx: 1.25, dy: 1.25)
-                let ring = NSBezierPath(roundedRect: inner,
-                                        xRadius: max(0, radius - 1.25),
-                                        yRadius: max(0, radius - 1.25))
                 accentRing.setStroke()
-                ring.lineWidth = 2
-                ring.stroke()
+                path.lineWidth = 2
+                path.stroke()
             }
             return true
         }
