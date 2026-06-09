@@ -96,8 +96,8 @@ enum DebugDump {
         let standIn = sampleAppIcon()
         let layouts: [(String, IconLayout, NSImage?)] = [
             ("Awake first",        IconLayout(focus: .awakeFirst),                              standIn),
-            ("Apps first · dot",   IconLayout(focus: .otherAppsFirst),                          standIn),
-            ("Apps first · icon",  IconLayout(focus: .otherAppsFirst, appIconMain: true),       standIn),
+            ("Apps first",         IconLayout(focus: .otherAppsFirst),                          standIn),
+            ("Lone app icon",      IconLayout(focus: .awakeFirst, appIconMain: true),           standIn),
             ("Lone: cup+dot",      IconLayout(focus: .awakeFirst, loneApp: .cupWithDot),        standIn),
             ("Corner icon",        IconLayout(focus: .awakeFirst, appIconMain: true, appIconCorner: true), standIn),
         ]

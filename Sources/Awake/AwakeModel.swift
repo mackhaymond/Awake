@@ -85,7 +85,9 @@ final class AwakeModel {
     /// call per render). nil when no app holds or no icon resolves → dot.
     var appsSlotIcon: NSImage? {
         let layout = prefs.iconLayout
-        guard layout.appIconMain || layout.appIconCorner,
+        // Resolve when either app-icon option is on, OR when "Show other apps in
+        // front" is selected (that mode mandates the real icon as the main mark).
+        guard layout.appIconMain || layout.appIconCorner || layout.focus == .otherAppsFirst,
               let row = leastTransientAppRow else { return nil }
         return AppIdentityResolver.icon(forBundleID: row.bundleID, path: row.iconBundleID)
     }

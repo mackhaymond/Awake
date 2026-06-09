@@ -115,11 +115,20 @@ struct SettingsView: View {
             Section("Icon Style") {
                 focusControl
                 loneAppControl
-                Toggle("Show an app's real icon as the main mark", isOn: layoutBinding(\.appIconMain))
-                    .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot.")
-                    // Inert when an app is never the main mark (cup always in front
-                    // AND lone apps shown in the corner).
-                    .disabled(layout.focus == .awakeFirst && layout.loneApp == .cupWithDot)
+                Toggle("Show an app's real icon as the main mark", isOn: Binding(
+                    // Mandated on when "Show other apps in front" is selected.
+                    get: { layout.appIconMain || layout.focus == .otherAppsFirst },
+                    set: { v in
+                        var l = model.prefs.iconLayout
+                        l.appIconMain = v
+                        model.prefs.iconLayout = l
+                    }
+                ))
+                .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot. Always on when “Show other apps in front” is selected.")
+                // Locked on under apps-first; inert when an app is never the main
+                // mark (cup always in front AND lone apps shown in the corner).
+                .disabled(layout.focus == .otherAppsFirst
+                          || (layout.focus == .awakeFirst && layout.loneApp == .cupWithDot))
                 Toggle("Show an app's real icon in the corner", isOn: layoutBinding(\.appIconCorner))
                     .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
                     // Inert when an app is always the main mark (it's never in the corner).
@@ -222,7 +231,7 @@ struct SettingsView: View {
         // Pass a stand-in (Awake's own icon) for the apps cells when either app-
         // icon option is on, so the static preview honestly shows icon mode — it
         // has no real third-party app to resolve.
-        let iconMode = layout.appIconMain || layout.appIconCorner
+        let iconMode = layout.appIconMain || layout.appIconCorner || layout.focus == .otherAppsFirst
         let standIn: NSImage? = iconMode ? NSApp.applicationIconImage : nil
         return VStack(alignment: .leading, spacing: 6) {
             Text("Preview")

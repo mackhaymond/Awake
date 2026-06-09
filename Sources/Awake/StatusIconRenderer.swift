@@ -287,7 +287,11 @@ enum StatusIconRenderer {
     /// (dot main) or an accent ring around the icon (icon main).
     private static func appPrimary(appsIcon: NSImage?, layout: IconLayout,
                                    app: NSColor, secondary: NSColor?) -> NSImage {
-        if layout.appIconMain, let appsIcon {
+        // "Show other apps in front" mandates the real app icon as the primary
+        // mark — a generic dot defeats the point of foregrounding the app. (Falls
+        // back to the dot only if no icon resolves.)
+        let useIcon = layout.appIconMain || layout.focus == .otherAppsFirst
+        if useIcon, let appsIcon {
             return composeAppIcon(appsIcon, accentRing: secondary, badge: nil, corner: fixedCorner)
         }
         let primary = Mark(symbol: appsDot, color: app, filled: true)
