@@ -51,7 +51,7 @@ cat > "${DEST}/Contents/Info.plist" <<PLIST
     <key>LSApplicationCategoryType</key>     <string>public.app-category.utilities</string>
     <key>CFBundleIconFile</key>              <string>AppIcon</string>
     <key>CFBundleIconName</key>              <string>AppIcon</string>
-    <key>NSHumanReadableCopyright</key>      <string>© 2026 Awake</string>
+    <key>NSHumanReadableCopyright</key>      <string>© 2026 Mack Haymond. MIT License.</string>
 </dict>
 </plist>
 PLIST
