@@ -37,6 +37,29 @@ enum StatusIconRenderer {
     /// a primary mark + a small corner mark tinted by whoever is in the corner.
     static func image(holders: IconHolders, palette p: Palette, layout: IconLayout,
                       appsIcon: NSImage? = nil) -> NSImage {
+        nudgedUp(composeImage(holders: holders, palette: p, layout: layout, appsIcon: appsIcon))
+    }
+
+    /// Points the finished glyph is raised within the menu bar. We add transparent
+    /// space at the BOTTOM of the image; because the bar vertically centers it,
+    /// that lifts the visible mark up by ~half this amount.
+    private static let verticalNudge: CGFloat = 3
+
+    private static func nudgedUp(_ img: NSImage) -> NSImage {
+        guard verticalNudge > 0, img.size.width > 0, img.size.height > 0 else { return img }
+        let isTemplate = img.isTemplate
+        let out = NSImage(size: NSSize(width: img.size.width, height: img.size.height + verticalNudge),
+                          flipped: false) { _ in
+            img.draw(in: NSRect(x: 0, y: verticalNudge, width: img.size.width, height: img.size.height),
+                     from: .zero, operation: .sourceOver, fraction: 1)
+            return true
+        }
+        out.isTemplate = isTemplate
+        return out
+    }
+
+    private static func composeImage(holders: IconHolders, palette p: Palette, layout: IconLayout,
+                                     appsIcon: NSImage? = nil) -> NSImage {
         // Idle: outline cup, adaptive/idle color.
         guard holders.any else {
             if let idle = p.idle { return symbolImage(cupOutline, color: idle) }

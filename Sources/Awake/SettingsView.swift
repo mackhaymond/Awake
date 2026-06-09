@@ -117,6 +117,9 @@ struct SettingsView: View {
                 loneAppControl
                 Toggle("Show an app's real icon as the main mark", isOn: layoutBinding(\.appIconMain))
                     .help("When an app is the large icon, show that app's real icon — the app that's kept your Mac awake the longest — instead of a colored dot.")
+                    // Inert when an app is never the main mark (cup always in front
+                    // AND lone apps shown in the corner).
+                    .disabled(layout.focus == .awakeFirst && layout.loneApp == .cupWithDot)
                 Toggle("Show an app's real icon in the corner", isOn: layoutBinding(\.appIconCorner))
                     .help("When an app is the small corner mark, show a tiny version of its real icon. Tiny icons can be hard to read; a colored dot is usually clearer.")
                     // Inert when an app is always the main mark (it's never in the corner).
