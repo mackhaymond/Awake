@@ -1,0 +1,12 @@
+# Normalize line endings; let git detect text vs binary.
+* text=auto eol=lf
+
+*.swift  text
+*.md     text
+*.sh     text eol=lf
+*.plist  text
+*.toml   text
+*.yml    text
+
+*.png    binary
+*.icns   binary

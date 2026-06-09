@@ -1,0 +1,34 @@
+# gitleaks configuration for Awake.
+# Keeps the full default ruleset (so a real key is still caught if ever added)
+# and allowlists this repo's known false positives. The Swift sources use the
+# word "token" to mean an IOKit assertion *identity* token (a bundle-id / proc
+# resolution key) — never an auth secret — so a naive scan would flag them.
+title = "Awake"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Awake-specific false positives"
+
+# Generated / vendored trees that are gitignored but may exist locally.
+paths = [
+    '''^\.build/''',
+    '''^\.codegraph/''',
+    '''^\.cursor/''',
+]
+
+# Known, intentional identifiers and the identity-token vocabulary.
+regexes = [
+    '''com\.mackhaymond\.Awake''',
+    '''mack\.haymond@icloud\.com''',
+    '''(?i)identity[ -]?tokens?''',
+    '''(?i)name[ -]?token''',
+    '''(?i)multi-?token''',
+]
+
+# Bare "token"/"tokens" words never indicate a secret in this codebase.
+stopwords = [
+    "token",
+    "tokens",
+]

@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & headless checks (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin a Swift 6 toolchain. macos-15 defaults to Xcode 16, but pin
+      # explicitly so a runner-image default change can't silently break the
+      # swift-tools-version:6.0 manifest parse. (macos-14 default = Xcode 15 /
+      # Swift 5.10, which CANNOT parse tools-version 6.0.)
+      - name: Select Xcode 16 (Swift 6)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16'
+
+      - name: Toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      # Optional: cache the SPM build directory to speed up subsequent runs.
+      - name: Cache .build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build (release)
+        run: swift build -c release
+
+      # Assembles the .app: iconutil + plutil + ad-hoc `codesign --sign -`.
+      # All of these run headless on the runner (no keychain/identity needed),
+      # including the offscreen CoreGraphics icon render in --appicon.
+      - name: Assemble & ad-hoc sign app bundle
+        run: bash build.sh
+
+      - name: Verify code signature
+        run: codesign --verify --verbose Awake.app
+
+      # Hard smoke test: --dump only READS power assertions, so it cannot fail
+      # for environmental reasons. Gate the pipeline on this.
+      - name: Headless dump (blocking smoke test)
+        run: ./.build/release/Awake --dump
+
+      # --selftest creates a REAL IOPMAssertion via IOKit/powerd. This works
+      # headless, but it's the one step whose result depends on runner power
+      # state, so keep it non-blocking. (It also always exits 0 unless it
+      # crashes, so this mainly guards against a crash.)
+      - name: Self-test (non-blocking)
+        continue-on-error: true
+        run: ./.build/release/Awake --selftest || true
+
+      # Exercise the offscreen CoreGraphics icon renderer end to end.
+      - name: Render icon sheet (non-blocking)
+        continue-on-error: true
+        run: ./.build/release/Awake --icons "$RUNNER_TEMP/icons.png"
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Awake-app
+          path: Awake.app
+
+      - name: Upload icon sheet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-sheet
+          path: ${{ runner.temp }}/icons.png
+          if-no-files-found: ignore
+
+  gitleaks:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        # If this repo is org-owned/private, gitleaks-action requires a (free
+        # for orgs) license key — uncomment the env block below. For a personal
+        # PUBLIC repo no license is needed.
+        # env:
+        #   GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
