@@ -22,18 +22,19 @@ concurrency:
 jobs:
   release:
     name: Build & publish app bundle
-    runs-on: macos-15
+    runs-on: macos-26
     outputs:
       version: ${{ steps.ver.outputs.version }}
       sha256: ${{ steps.pkg.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v6
 
-      # Pin the Swift 6 toolchain (see ci.yml for why macos-14 defaults break).
-      - name: Select Xcode 16 (Swift 6)
+      # Pin Xcode 26 → macOS 26 SDK (see ci.yml: older SDKs trigger legacy
+      # compatibility rendering on macOS 26).
+      - name: Select Xcode 26
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16'
+          xcode-version: '26'
 
       - name: Resolve version from tag
         id: ver
