@@ -27,6 +27,10 @@ enum StatusIconRenderer {
     /// no separation rim — it needs the extra size to stay recognizable.
     private static let appCornerIconScale: CGFloat = 0.72
     private static let fixedCorner: IconCorner = .topRight
+    /// The corner app icon is large, so left top-anchored it hangs down to the
+    /// middle of the cup. Add headroom above the primary and anchor the icon
+    /// there, lifting it into the upper-right corner.
+    private static let cornerIconLift: CGFloat = 3
 
     // MARK: - Primary entry point (holders + layout)
 
@@ -306,10 +310,14 @@ enum StatusIconRenderer {
         let canvas = primaryImage.size
         let badgePt = pointSize * scale
         let iconSize = NSSize(width: badgePt, height: badgePt)
-        let composed = NSImage(size: canvas, flipped: false) { _ in
-            primaryImage.draw(in: NSRect(origin: .zero, size: canvas),
+        // Pad symmetrically (top + bottom) so the cup stays vertically centered
+        // exactly as in non-corner states, while the icon — anchored to the new
+        // top — rises by `cornerIconLift` relative to the cup.
+        let outSize = NSSize(width: canvas.width, height: canvas.height + cornerIconLift * 2)
+        let composed = NSImage(size: outSize, flipped: false) { _ in
+            primaryImage.draw(in: NSRect(x: 0, y: cornerIconLift, width: canvas.width, height: canvas.height),
                               from: .zero, operation: .sourceOver, fraction: 1)
-            let iconRect = cornerRect(canvas: canvas, glyph: iconSize,
+            let iconRect = cornerRect(canvas: outSize, glyph: iconSize,
                                       inset: max(1, badgePt * 0.15), corner: corner)
             let radius = iconRect.width * 0.225
             // No separation rim — the app icon sits clean in the corner.
