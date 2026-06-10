@@ -93,7 +93,13 @@ Render the current settings' states to a PNG: `Awake.app/Contents/MacOS/Awake --
 
 ## Install
 
-Download the latest **Awake.app** from the
+Via Homebrew:
+
+```sh
+brew install --cask mackhaymond/formulae/awake
+```
+
+Or download the latest **Awake.app** from the
 [Releases page](https://github.com/mackhaymond/Awake/releases), unzip, and open it.
 Builds are ad-hoc signed (not notarized), so on first launch right-click → **Open**, or
 run `xattr -dr com.apple.quarantine Awake.app`.
