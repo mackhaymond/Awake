@@ -15,7 +15,7 @@ jobs:
     name: Build & headless checks (macOS)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Pin a Swift 6 toolchain. macos-15 defaults to Xcode 16, but pin
       # explicitly so a runner-image default change can't silently break the
@@ -33,7 +33,7 @@ jobs:
 
       # Optional: cache the SPM build directory to speed up subsequent runs.
       - name: Cache .build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -74,14 +74,14 @@ jobs:
         run: ./.build/release/Awake --icons "$RUNNER_TEMP/icons.png"
 
       - name: Upload app bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Awake-app
           path: Awake.app
 
       - name: Upload icon sheet
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: icon-sheet
           path: ${{ runner.temp }}/icons.png
@@ -91,11 +91,11 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           # Required: the action checks the repo owner's account type via the
           # GitHub API; without a token that call is unauthenticated, gets

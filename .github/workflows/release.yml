@@ -24,7 +24,7 @@ jobs:
     name: Build & publish app bundle
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Pin the Swift 6 toolchain (see ci.yml for why macos-14 defaults break).
       - name: Select Xcode 16 (Swift 6)
