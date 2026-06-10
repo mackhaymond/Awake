@@ -160,7 +160,7 @@ enum AssertionClassifier {
     }
 
     /// The seen-holders batch for the FULL classified set, computed BEFORE any
-    /// show-system gate (bug #9). refresh() must record seen holders from this —
+    /// show-system gate. refresh() must record seen holders from this —
     /// not from the displayed `rows` buckets — because a holder whose EFFECTIVE
     /// bucket is System while "Show System" is off is dropped from `rows` and so
     /// would never have its lastSeen bumped, aging it out of the registry while
@@ -189,7 +189,7 @@ enum AssertionClassifier {
         return out
     }
 
-    // MARK: - Bucketing (spec §2.3)
+    // MARK: - Bucketing
 
     static func bucket(for a: PowerAssertion, ownPID: Int32, resolvedProcName: String) -> Bucket {
         // 1. THIS APP — our own native IOPMAssertion.
@@ -216,7 +216,7 @@ enum AssertionClassifier {
         return .apps
     }
 
-    // MARK: - Friendly reason (spec §2.4)
+    // MARK: - Friendly reason
 
     /// A short descriptor of WHY sleep is held, WITHOUT the app name (the row's
     /// title already shows the app/command). e.g. "audio/WebRTC (call)",

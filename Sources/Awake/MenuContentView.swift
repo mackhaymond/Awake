@@ -11,7 +11,7 @@ struct MenuContentView: View {
     /// Measured intrinsic height of the holder list, used to give the bounded
     /// ScrollView a CONCRETE height (a plain ScrollView{}.frame(maxHeight:) reports
     /// an ideal height of ~0 inside the auto-sizing MenuBarExtra .window and so
-    /// collapses to nothing — bug #13). With a measured height we render normally
+    /// collapses to nothing). With a measured height we render normally
     /// for a few holders and cap + scroll for many.
     @State private var listContentHeight: CGFloat = 0
 
@@ -41,7 +41,7 @@ struct MenuContentView: View {
             // .frame(maxHeight:) would collapse to ~0 in the .window MenuBarExtra.
             // Section title for the who's-keeping-awake list (Awake's headline
             // feature). Kept OUTSIDE the bounded ScrollView so it doesn't scroll
-            // away — and so the measured-height list (bug #13) is untouched.
+            // away — and so the measured-height list is untouched.
             VStack(alignment: .leading, spacing: 4) {
                 if !isListEmpty {
                     Text("Keeping your Mac awake")
@@ -267,11 +267,11 @@ struct MenuContentView: View {
         // Compute the NEXT occurrence of the picked wall-clock hour:minute from
         // now, via the calendar. This:
         //  • ignores the (possibly days-stale) DATE component of the @State Date,
-        //    which the .hourAndMinute picker never updates (bug #4 — a stale base
-        //    date used to go strongly negative and become a forever INDEFINITE
-        //    hold); and
+        //    which the .hourAndMinute picker never updates (a stale base date
+        //    would go strongly negative and become a forever INDEFINITE hold);
+        //    and
         //  • is DST-correct: "tomorrow at HH:MM" across a DST boundary is 23h or
-        //    25h away, not a literal 86,400s (bug #12).
+        //    25h away, not a literal 86,400s.
         let cal = Calendar.current
         let comps = cal.dateComponents([.hour, .minute], from: untilTime)
         guard let target = cal.nextDate(after: Date(),
@@ -293,8 +293,8 @@ struct MenuContentView: View {
         // Count/enablement use the SAME predicate as the kill (model.killStray-
         // Caffeinate): the user's OWN caffeinate holds (isCaffeinate && natural
         // bucket == You), regardless of any manual category override. So the
-        // displayed "Stop N" equals what gets killed (bug #10) and a caffeinate
-        // overridden out of You is still counted + killable (bug #11).
+        // displayed "Stop N" equals what gets killed and a caffeinate
+        // overridden out of You is still counted + killable.
         let youCount = model.ownCaffeinateRows.count
         let hasYou = youCount > 0
         let label = "Stop \(youCount) Command\(youCount == 1 ? "" : "s")"
@@ -340,7 +340,7 @@ struct MenuContentView: View {
     /// we clamp the ScrollView's concrete height to `min(measured, maxListHeight)`,
     /// so it grows with the holder count up to the cap and then scrolls — without
     /// collapsing to ~0 the way a bare ScrollView does inside the .window
-    /// MenuBarExtra (bug #13).
+    /// MenuBarExtra.
     @ViewBuilder
     private var boundedAssertionList: some View {
         let height = listContentHeight > 0 ? min(listContentHeight, maxListHeight) : nil

@@ -1,11 +1,10 @@
 # Awake
 
-A native macOS menu-bar app that shows **who is keeping your Mac awake** — and lets
-you keep it awake yourself, with timed holds and a global hotkey. Instead of a single
-on/off, it breaks down every power assertion by **owner** and lets you start/stop holds
-natively.
+A native macOS menu-bar app that shows who is keeping your Mac awake, and lets you
+keep it awake yourself with timed holds and a global hotkey. Instead of a single
+on/off switch, it breaks down every power assertion by owner.
 
-Zero external dependencies — only Apple system frameworks (SwiftUI, AppKit,
+No third-party dependencies — only Apple system frameworks (SwiftUI, AppKit,
 IOKit, Carbon, ServiceManagement).
 
 ## What it shows
@@ -16,33 +15,33 @@ The dropdown groups every sleep-relevant power assertion into four buckets:
 |---|---|
 | **This App** | Caffeination you started *here* (a native `IOPMAssertion`). |
 | **You** | `caffeinate` *you* started — typed in a terminal. Shows the command (`caffeinate -i -t 300`), a live countdown, and the source (`CLI` / terminal name). |
-| **Apps** | An app/tool keeping sleep open — including **tools that spawn `caffeinate` under the hood** (e.g. **Claude Code** → "Claude Code · via caffeinate"), plus apps holding native assertions (**Arc** WebRTC/audio, ChatGPT, Messages…). Apps that hold sleep "on behalf of" another (via `runningboardd`) are attributed to the real app. |
+| **Apps** | An app or tool keeping sleep open — including tools that spawn `caffeinate` under the hood (e.g. Claude Code shows as "Claude Code · via caffeinate"), plus apps holding native assertions (Arc WebRTC/audio, ChatGPT, Messages…). Apps that hold sleep "on behalf of" another (via `runningboardd`) are attributed to the real app. |
 | **System** | OS plumbing — `powerd` (display-on), `WindowServer`, and background daemons (`mds_stores`, `dataaccessd`, `cloudd`…). Hidden by default; toggle in Settings. |
 
 ### How caffeinate attribution works
 
-The `caffeinate` CLI is used by *you* (typed in a terminal) **and** by tools that
+The `caffeinate` CLI is used by *you* (typed in a terminal) and by tools that
 keep the Mac awake while they run — Claude Code, for instance, spawns
 `caffeinate -i -t 300` and refreshes it every 5 minutes. To tell these apart,
-Awake walks each `caffeinate` process's **parent/ancestor chain** (`sysctl` +
+Awake walks each `caffeinate` process's parent/ancestor chain (`sysctl` +
 `proc_pidpath`) and credits the nearest meaningful originator:
 
-- nearest non-shell ancestor is a **terminal emulator** (WezTerm, iTerm, Terminal…)
+- nearest non-shell ancestor is a terminal emulator (WezTerm, iTerm, Terminal…)
   or the process is shell/launchd-rooted → **You** (`CLI`) — you typed it
-- nearest ancestor is **any other tool/app** (Claude Code, build scripts, Electron
+- nearest ancestor is any other tool or app (Claude Code, build scripts, Electron
   apps…) → **Apps**, labelled "*Tool* · via caffeinate"
 
 Shells, `tmux`, `login`, `sudo`, etc. are treated as pass-through; generic
 runtimes (`node`, `electron`…) are bridged up to the owning `.app`.
 
-The **menu-bar icon** is composed from a **primary mark** plus an optional small
-**top-right corner mark**, so you can always tell who is holding sleep open even when
-both you and an app are:
+The menu-bar icon is composed from a primary mark plus an optional small top-right
+corner mark, so you can always tell who is holding sleep open even when both you and
+an app are:
 
-- a **cup** stands for *your* hold — **filled** while you're holding (via Awake or a CLI
-  `caffeinate`), **outline** when the Mac can sleep;
-- a **colored dot** — or, optionally, the **real icon** of the app — stands for *another
-  app* holding sleep.
+- a cup stands for *your* hold — filled while you're holding (via Awake or a CLI
+  `caffeinate`), outline when the Mac can sleep;
+- a colored dot — or, optionally, the app's real icon — stands for *another app*
+  holding sleep.
 
 When both you and an app hold at once, one is the primary mark and the other shrinks to
 the corner. Which goes in front is your choice in **Settings → Appearance → Icon Style**:
@@ -52,7 +51,7 @@ the corner. Which goes in front is your choice in **Settings → Appearance → 
 | **Awake** (default) | your cup is primary, the app rides in the corner | a cup with the app in the corner — or just the app, your pick |
 | **other apps** | the app's icon is primary, your cup shrinks to a corner pip/ring | the app on its own |
 
-Your own holds default to adaptive **template** glyphs that follow the menu bar's
+Your own holds default to adaptive template glyphs that follow the menu bar's
 light/dark appearance; the app mark uses the configurable **Apps** color (a dot) or the
 app's real icon. When *This App* and *You (CLI)* both hold, the cup takes the *This App*
 color.
@@ -110,7 +109,7 @@ open Awake.app         # registers with LaunchServices; menu-bar icon appears
 
 Requires the Swift 6 toolchain (Xcode 16+). macOS 14+ (`LSMinimumSystemVersion`); built/tested on macOS 26.
 
-`build.sh` **ad-hoc signs** the app (no Developer ID, not notarized), which is fine for
+`build.sh` ad-hoc signs the app (no Developer ID, not notarized), which is fine for
 running it on the Mac that built it. If you move the bundle to another Mac, macOS
 Gatekeeper will flag it as from an unidentified developer — right-click → **Open** once,
 or run `xattr -dr com.apple.quarantine Awake.app`. Building from source is the supported

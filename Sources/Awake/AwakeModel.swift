@@ -324,7 +324,7 @@ final class AwakeModel {
         // overridden later even when it's no longer active. Built from the FULL
         // classified set (BEFORE the show-system gate), so a holder whose
         // effective bucket is System while "Show System" is off still has its
-        // lastSeen bumped and isn't aged out of the registry while active (bug #9).
+        // lastSeen bumped and isn't aged out of the registry while active.
         // Batched into a single persist instead of one UserDefaults write per tick.
         let seenBatch = AssertionClassifier.seenBatch(
             from: assertions,
@@ -350,9 +350,9 @@ final class AwakeModel {
     ///
     /// Truth is `ownNativeHoldPresent` — our OWN assertion (namePrefix +
     /// naturalBucket==.thisApp), never a foreign holder a user overrode INTO
-    /// "This App" (bug #1). We only ever auto-release a TIMED hold, because that
+    /// "This App". We only ever auto-release a TIMED hold, because that
     /// is the only kind the kernel auto-releases; an indefinite hold is never
-    /// inferred-released from an empty read-back (bug #6) — a transient pmset/IOKit
+    /// inferred-released from an empty read-back — a transient pmset/IOKit
     /// miss must not tear down a live forever-hold. We also require the read-back
     /// to be non-empty before counting a miss, so a wholesale empty snapshot
     /// (subprocess/parse hiccup) doesn't masquerade as "our hold vanished".
@@ -435,10 +435,10 @@ final class AwakeModel {
     /// "You" — regardless of any manual category override. This is the SINGLE
     /// predicate that drives BOTH the menu's count/enablement AND the kill set, so:
     ///  • the displayed "Stop N" count always equals what actually gets killed
-    ///    (bug #10 — a non-caffeinate row overridden INTO You no longer inflates
-    ///    the count, and would no-op the kill); and
+    ///    (a non-caffeinate row overridden INTO You would otherwise inflate the
+    ///    count and no-op the kill); and
     ///  • a genuine caffeinate the user re-categorized for display (overridden OUT
-    ///    of You into Apps/System) stays killable (bug #11).
+    ///    of You into Apps/System) stays killable.
     /// Scans all buckets because an override leaves buckets[.you].
     var ownCaffeinateRows: [AssertionRow] {
         var out: [AssertionRow] = []

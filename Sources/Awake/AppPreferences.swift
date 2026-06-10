@@ -106,7 +106,7 @@ final class AppPreferences {
     /// would otherwise JSON-encode + write UserDefaults once per holder, every
     /// tick (1 Hz while a hold is active).
     ///
-    /// Bug #20: only mutate/persist when something MATERIAL changed. An existing
+    /// Only mutate/persist when something MATERIAL changed. An existing
     /// entry whose displayName and naturalBucket are unchanged is left untouched
     /// unless its lastSeen is older than `seenTouchInterval`, so a steady set of
     /// holders no longer rewrites the whole registry (and re-renders the Categories
@@ -116,7 +116,7 @@ final class AppPreferences {
         var dict = seenHolders
         let now = Date()
         var changed = false
-        let activeKeys = Set(batch.map { $0.key })   // bug #9: never evict these
+        let activeKeys = Set(batch.map { $0.key })   // currently active: never evict these
         for item in batch {
             if let existing = dict[item.key],
                existing.displayName == item.displayName,
@@ -136,7 +136,7 @@ final class AppPreferences {
             changed = true
         }
         if dict.count > Self.seenCap {
-            // Evict oldest by lastSeen, but NEVER a currently-active holder (bug #9):
+            // Evict oldest by lastSeen, but NEVER a currently-active holder:
             // an active holder we just recorded must not be aged out from under its
             // override.
             let evictable = dict

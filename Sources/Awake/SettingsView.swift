@@ -307,7 +307,7 @@ struct SettingsView: View {
         }
     }
 
-    // Explicit Binding<Color> bridges (most reliable form per the research report).
+    // Explicit Binding<Color> bridges — the most reliable form for macOS color wells.
     private var bindSelf: Binding<Color> {
         Binding(get: { model.prefs.iconColorSelf.swiftUIColor },
                 set: { model.prefs.iconColorSelf = ColorStore($0) })

@@ -21,7 +21,6 @@ paths = [
 # Known, intentional identifiers and the identity-token vocabulary.
 regexes = [
     '''com\.mackhaymond\.Awake''',
-    '''mack\.haymond@icloud\.com''',
     '''(?i)identity[ -]?tokens?''',
     '''(?i)name[ -]?token''',
     '''(?i)multi-?token''',

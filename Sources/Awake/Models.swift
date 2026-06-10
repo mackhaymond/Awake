@@ -25,7 +25,7 @@ enum AssertionType: String, Sendable {
     }
 
     /// True for assertions that actually prevent the *system* from sleeping
-    /// (or that we surface as sleep-relevant). See spec §2.2.
+    /// (or that we surface as sleep-relevant).
     var blocksSystemSleep: Bool {
         switch self {
         case .preventUserIdleSystemSleep,
