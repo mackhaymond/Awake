@@ -96,8 +96,9 @@ jobs:
           fetch-depth: 0
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
-        # If this repo is org-owned/private, gitleaks-action requires a (free
-        # for orgs) license key — uncomment the env block below. For a personal
-        # PUBLIC repo no license is needed.
-        # env:
-        #   GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        env:
+          # Required: the action checks the repo owner's account type via the
+          # GitHub API; without a token that call is unauthenticated, gets
+          # rate-limited on shared runners, and the action then fails asking
+          # for a license. Personal repos need no GITLEAKS_LICENSE — only orgs do.
+          GITHUB_TOKEN: ${{ github.token }}
