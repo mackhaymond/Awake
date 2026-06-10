@@ -132,3 +132,5 @@ jobs:
             --title "awake ${VERSION}" \
             --body "Automated cask bump from Awake's release workflow (v${VERSION})." \
             || echo "PR already open for $BRANCH"
+          # Merges itself once the tap's required "Tap syntax" check passes.
+          gh pr merge --auto --squash "$BRANCH"
