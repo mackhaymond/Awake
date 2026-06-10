@@ -23,6 +23,9 @@ jobs:
   release:
     name: Build & publish app bundle
     runs-on: macos-15
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      sha256: ${{ steps.pkg.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v6
 
@@ -55,6 +58,7 @@ jobs:
           ditto -c -k --keepParent Awake.app "$ASSET"
           shasum -a 256 "$ASSET" | tee "$ASSET.sha256"
           echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(awk '{print $1}' "$ASSET.sha256")" >> "$GITHUB_OUTPUT"
 
       - name: Release notes
         id: notes
@@ -91,3 +95,40 @@ jobs:
               --title "Awake $TAG" \
               --notes-file notes.md
           fi
+
+  # Open a PR against the Homebrew tap bumping the cask to this release.
+  # Needs the TAP_GITHUB_TOKEN secret: a fine-grained PAT scoped to
+  # mackhaymond/homebrew-formulae with Contents + Pull requests read/write.
+  bump-cask:
+    name: PR the cask bump to the tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v6
+        with:
+          repository: mackhaymond/homebrew-formulae
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      - name: Bump version + sha256, open PR
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          sed -i -E "s|^(  version \").*(\")$|\1${VERSION}\2|"  Casks/awake.rb
+          sed -i -E "s|^(  sha256 \").*(\")$|\1${SHA256}\2|" Casks/awake.rb
+          if git diff --quiet; then
+            echo "cask already at ${VERSION}; nothing to do"
+            exit 0
+          fi
+          BRANCH="bump-awake-${VERSION}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "awake ${VERSION}"
+          git push -fu origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "awake ${VERSION}" \
+            --body "Automated cask bump from Awake's release workflow (v${VERSION})." \
+            || echo "PR already open for $BRANCH"
