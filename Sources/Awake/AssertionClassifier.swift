@@ -37,6 +37,10 @@ enum AssertionClassifier {
         let bundleID: String?
         let iconBundleID: String?
         let sfFallback: String?
+        var groupKey: String? = nil
+        var groupNoun: String? = nil
+        var sessionID: Int32? = nil
+        var note: String? = nil
         // Stable identity anchor: survives PID death whenever the
         // assertion carried a BundlePath or the PID was live when resolved.
         // Caffeinate rows are identified by their command line, not an exec path.
@@ -54,6 +58,10 @@ enum AssertionClassifier {
             bundleID = origin.iconBundleID
             iconBundleID = origin.iconBundleID
             sfFallback = origin.sfFallback
+            groupKey = origin.groupKey
+            groupNoun = origin.groupNoun
+            sessionID = origin.sessionID
+            note = origin.note
         } else {
             var b = Self.bucket(for: a, ownPID: ownPID,
                                 resolvedProcName: identity.processNameForBucketing)
@@ -110,7 +118,11 @@ enum AssertionClassifier {
             ownerPID: a.ownerPID,
             isCaffeinate: a.ownerProcName == "caffeinate",
             executablePath: executablePath,
-            sfFallback: sfFallback
+            sfFallback: sfFallback,
+            groupKey: groupKey,
+            groupNoun: groupNoun,
+            sessionID: sessionID,
+            note: note
         )
         return Classified(key: key, row: row)
     }
@@ -144,8 +156,10 @@ enum AssertionClassifier {
             buckets[c.row.bucket, default: []].append(c.row)
         }
 
-        // Sort within each bucket: timed rows first (shortest remaining), then by title.
+        // Collapse each bucket's grouped states into one row apiece, then sort:
+        // timed rows first (shortest remaining), then by title.
         for key in buckets.keys {
+            buckets[key] = collapseGroups(buckets[key] ?? [])
             buckets[key]?.sort { lhs, rhs in
                 switch (lhs.timeoutSecsLeft, rhs.timeoutSecsLeft) {
                 case let (l?, r?): return l < r
@@ -157,6 +171,71 @@ enum AssertionClassifier {
         }
 
         return buckets
+    }
+
+    // MARK: - Grouping
+
+    /// Collapse rows that represent ONE ongoing state into a single row.
+    ///
+    /// A working Claude Code session re-spawns its 5-minute keepalive every few
+    /// minutes, so two of them overlap most of the time and several sessions
+    /// multiply that — as separate rows it reads as a pile of identical holders
+    /// instead of "Claude Code is working". Members are merged into their
+    /// representative, which shows the count of distinct SESSIONS (not
+    /// processes) and the longest remaining time, since the state lasts until
+    /// the last member expires.
+    ///
+    /// Rows with no group key pass through untouched, in their original order.
+    private static func collapseGroups(_ rows: [AssertionRow]) -> [AssertionRow] {
+        guard rows.contains(where: { $0.groupKey != nil }) else { return rows }
+
+        var out: [AssertionRow] = []
+        var slotForGroup: [String: Int] = [:]     // group key → index in `out`
+        var members: [String: [AssertionRow]] = [:]
+
+        for row in rows {
+            guard let key = row.groupKey else { out.append(row); continue }
+            members[key, default: []].append(row)
+            if slotForGroup[key] == nil {
+                slotForGroup[key] = out.count
+                out.append(row)               // placeholder; merged in below
+            }
+        }
+        // Merge every group, including single-member ones, so a group's row id
+        // stays "group:<key>" as members come and go rather than flipping to a
+        // per-process id whenever a session happens to hold exactly one.
+        for (key, list) in members {
+            guard let slot = slotForGroup[key], let merged = merge(list) else { continue }
+            out[slot] = merged
+        }
+        return out
+    }
+
+    /// One row standing for a whole group. The representative is the first
+    /// member that still has a live owner, so a session that's genuinely working
+    /// describes the group even when an orphaned, expiring member came first.
+    private static func merge(_ members: [AssertionRow]) -> AssertionRow? {
+        guard let first = members.first else { return nil }
+        let representative = members.first { $0.sessionID != nil } ?? first
+        var row = representative
+
+        // Stable id: the group outlives any individual member, and re-keying it
+        // as members expire would churn the list's identity every few minutes.
+        row.id = "group:" + (representative.groupKey ?? representative.title)
+
+        // The state ends when the LAST member does; nil (no kernel timeout)
+        // means indefinite and wins outright.
+        row.timeoutSecsLeft = members.contains { $0.timeoutSecsLeft == nil }
+            ? nil
+            : members.compactMap(\.timeoutSecsLeft).max()
+
+        let sessions = Set(members.compactMap(\.sessionID)).count
+        if sessions > 1, let noun = representative.groupNoun {
+            row.reason = representative.reason.isEmpty
+                ? "\(sessions) \(noun)s"
+                : representative.reason + " · \(sessions) \(noun)s"
+        }
+        return row
     }
 
     /// The seen-holders batch for the FULL classified set, computed BEFORE any
@@ -229,6 +308,14 @@ enum AssertionClassifier {
         // caffeinate CLI (YOU bucket): title is the command, countdown shows time.
         if a.ownerProcName == "caffeinate" || haystack.contains("caffeinate") {
             return ""
+        }
+        // Claude Desktop holds an Electron power-save blocker for as long as the
+        // app is open. It looks like the agent stack's caffeinate states but
+        // means something much weaker — the app is running, not that work is in
+        // flight — so name that difference instead of falling through to a
+        // generic "keeping system awake".
+        if appName == "Claude" && haystack.contains("electron") {
+            return "app is open"
         }
         // WebRTC / RTC audio (call).
         if haystack.contains("webrtc") || haystack.contains("rtcaudio") {

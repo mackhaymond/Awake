@@ -14,8 +14,8 @@ The dropdown groups every sleep-relevant power assertion into four buckets:
 | Bucket | What it is |
 |---|---|
 | **This App** | Caffeination you started *here* (a native `IOPMAssertion`). |
-| **You** | `caffeinate` *you* started — typed in a terminal. Shows the command (`caffeinate -i -t 300`), a live countdown, and the source (`CLI` / terminal name). |
-| **Apps** | An app or tool keeping sleep open — including tools that spawn `caffeinate` under the hood (e.g. Claude Code shows as "Claude Code · via caffeinate"), plus apps holding native assertions (Arc WebRTC/audio, ChatGPT, Messages…). Apps that hold sleep "on behalf of" another (via `runningboardd`) are attributed to the real app. |
+| **You** | `caffeinate` *you* started — typed in a terminal. Shows the command (`caffeinate -u -t 3600`), a live countdown, and the source (`CLI` / terminal name). |
+| **Apps** | An app or tool keeping sleep open — including tools that spawn `caffeinate` under the hood (labelled "*Tool* · via caffeinate", or by the state it stands for — see [Named agent states](#named-agent-states)), plus apps holding native assertions (Arc WebRTC/audio, ChatGPT, Messages…). Apps that hold sleep "on behalf of" another (via `runningboardd`) are attributed to the real app. |
 | **System** | OS plumbing — `powerd` (display-on), `WindowServer`, and background daemons (`mds_stores`, `dataaccessd`, `cloudd`…). Hidden by default; toggle in Settings. |
 
 ### How caffeinate attribution works
@@ -33,6 +33,22 @@ Awake walks each `caffeinate` process's parent/ancestor chain (`sysctl` +
 
 Shells, `tmux`, `login`, `sudo`, etc. are treated as pass-through; generic
 runtimes (`node`, `electron`…) are bridged up to the owning `.app`.
+
+### Named agent states
+
+Some `caffeinate` processes always mean one specific thing, so Awake names the
+*state* instead of the command line. Recognised by the direct parent, with the
+exact argv as a fallback for the case where the parent has already exited and
+the process reparented to `launchd`:
+
+| Row | What it is |
+|---|---|
+| **Claude Code** — *working* | `caffeinate -i -t 300` spawned by a `claude` process. Each actively-working session renews one every ~5 minutes. Overlapping holds from several sessions collapse into one row that counts *sessions*, not processes; an orphan whose session has exited reads *keepalive expiring*. |
+| **Agent GUI run** — *holding the display* | `caffeinate -d -t 600` held by the cua MCP shim while an agent drives the GUI, so the idle lock can't close the accessibility doors mid-run. Names the app being driven when the shim's `activity.json` says which. Released ~2 min after the last action; only recognised while the feature's flag file exists. Forcing the displays to sleep still beats it — it isn't something you need to stop. |
+
+Claude Desktop is deliberately *not* one of these: it holds a native Electron
+power-save blocker under its own pid for as long as the app is open, and shows
+as **Claude** — *app is open*.
 
 The menu-bar icon is composed from a primary mark plus an optional small top-right
 corner mark, so you can always tell who is holding sleep open even when both you and

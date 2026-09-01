@@ -27,6 +27,42 @@ enum ProcessAncestry {
         return (ppid, name)
     }
 
+    /// A process's argument vector, read straight from the kernel — no `ps`
+    /// spawn. Used to fingerprint a parent whose `p_comm` is only a runtime name
+    /// (a `python3` that is really the cua MCP shim). Empty when the process is
+    /// gone or owned by another user.
+    ///
+    /// KERN_PROCARGS2 lays out: `int argc`, the NUL-terminated exec path, NUL
+    /// padding, then `argc` NUL-separated arguments, then the environment.
+    static func arguments(of pid: Int32) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &buf, &size, nil, 0) == 0 else { return [] }
+
+        let header = MemoryLayout<Int32>.size
+        guard size > header else { return [] }
+        var argc: Int32 = 0
+        withUnsafeMutableBytes(of: &argc) { $0.copyBytes(from: buf[0..<header]) }
+        guard argc > 0 else { return [] }
+
+        var i = header
+        while i < size && buf[i] != 0 { i += 1 }        // skip the exec path
+        while i < size && buf[i] == 0 { i += 1 }        // skip its NUL padding
+
+        var args: [String] = []
+        var start = i
+        while i < size && args.count < Int(argc) {
+            if buf[i] == 0 {
+                args.append(String(decoding: buf[start..<i], as: UTF8.self))
+                start = i + 1
+            }
+            i += 1
+        }
+        return args
+    }
+
     /// Ancestors from the immediate parent up toward launchd (caffeinate itself
     /// is NOT included). Ordered nearest-first.
     static func ancestry(of pid: Int32, maxDepth: Int = 16) -> [Proc] {
@@ -54,6 +90,8 @@ enum ProcessAncestry {
 /// Decides which bucket a `caffeinate` process belongs to based on its
 /// originating ancestor, and how to label it.
 ///
+///  - a known agent-stack keepalive        →  APPS, named by the STATE it
+///    represents (see `AgentCaffeinate`) rather than by its command line
 ///  - a terminal emulator or a bare shell  →  YOU (you started it)
 ///  - any other tool or app (Claude Code, build scripts, Electron apps…)
 ///    that spawned `caffeinate` under the hood        →  APPS ("Tool · via caffeinate")
@@ -66,6 +104,20 @@ enum CaffeinateOrigin {
         let reason: String
         let iconBundleID: String?
         let sfFallback: String?
+        /// Non-nil for holders that represent ONE ongoing state rather than one
+        /// process: rows sharing a key collapse into a single row (a working
+        /// Claude Code session re-spawns its keepalive every few minutes, so the
+        /// same state otherwise stacks up several identical rows).
+        var groupKey: String? = nil
+        /// What one member of the group is called, for the collapsed row's
+        /// count ("working · 3 sessions").
+        var groupNoun: String? = nil
+        /// The distinct thing holding this — the owning agent process. Several
+        /// overlapping caffeinates from ONE session share a sessionID, so the
+        /// collapsed row counts sessions rather than processes.
+        var sessionID: Int32? = nil
+        /// Longer explanation, shown as the row's tooltip.
+        var note: String? = nil
     }
 
     /// Shells / multiplexers / wrappers that are "pass-through" — they don't own
@@ -111,6 +163,15 @@ enum CaffeinateOrigin {
 
     static func classify(caffeinatePID pid: Int32, command: String) -> Resolved {
         let chain = ProcessAncestry.ancestry(of: pid)
+
+        // A caffeinate the local agent stack spawned means something specific;
+        // name that state instead of the command line. Checked first, and
+        // before the empty-chain fallback, because an orphaned keepalive whose
+        // parent already exited is exactly the case that used to read as a bare
+        // "caffeinate -i -t 300" command the user supposedly ran.
+        if let agent = AgentCaffeinate.match(command: command, chain: chain) {
+            return agent
+        }
 
         // Couldn't read the ancestry at all (transient/dead pid): don't assume
         // it's the user's manual hold — treat as an unattributed tool under Apps.

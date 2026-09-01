@@ -427,6 +427,10 @@ struct MenuContentView: View {
             Spacer()
         }
         .foregroundStyle(row.isMuted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+        // Rows whose title is a STATE rather than an app name carry the longer
+        // explanation here — what the hold is for, and whether it's something
+        // to act on — since the caption line only has room for a few words.
+        .help(row.note ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel(for: row))
     }

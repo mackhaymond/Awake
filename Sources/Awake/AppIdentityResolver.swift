@@ -296,7 +296,7 @@ enum AppIdentityResolver {
         return fallback
     }
 
-    private static func appName(forBundleID bundleID: String) -> String? {
+    static func appName(forBundleID bundleID: String) -> String? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
         else { return nil }
         return url.deletingPathExtension().lastPathComponent

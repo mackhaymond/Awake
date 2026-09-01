@@ -210,14 +210,17 @@ struct AppIdentity: Sendable {
 // MARK: - AssertionRow (handed to the view)
 
 struct AssertionRow: Identifiable, Sendable {
-    let id: String
+    // id / reason / timeoutSecsLeft are var so several rows that are really ONE
+    // ongoing state can be merged into a representative row (see
+    // AssertionClassifier.merge). Everything else is fixed at classification.
+    var id: String
     let bucket: Bucket              // effective bucket (after any manual override)
     let naturalBucket: Bucket      // bucket Awake's automatic sorting chose
     let title: String
-    let reason: String
+    var reason: String
     let bundleID: String?
     let iconBundleID: String?
-    let timeoutSecsLeft: Int?
+    var timeoutSecsLeft: Int?
     let isMuted: Bool
     let rawName: String
     let rawType: String
@@ -225,6 +228,12 @@ struct AssertionRow: Identifiable, Sendable {
     let isCaffeinate: Bool         // true if this holder is a `caffeinate` process
     let executablePath: String?    // stable identity anchor (survives PID death via BundlePath)
     var sfFallback: String? = nil   // SF Symbol shown when no app icon resolves
+    /// Rows sharing a non-nil key are ONE ongoing state and collapse into a
+    /// single row (see `CaffeinateOrigin.Resolved.groupKey`).
+    var groupKey: String? = nil
+    var groupNoun: String? = nil    // "session" / "run", for the collapsed count
+    var sessionID: Int32? = nil     // distinct holder within a group
+    var note: String? = nil         // longer explanation, shown as a tooltip
 
     /// Canonical (primary) identity key — the most stable token. Used for storing
     /// an override / seen entry and for de-duplicating rows in the UI.
