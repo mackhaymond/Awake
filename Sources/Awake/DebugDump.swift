@@ -40,9 +40,10 @@ enum DebugDump {
         let pid = getpid()
         let controller = CaffeinationController()
 
+        // Scoped to this process so a running Awake.app's own hold doesn't count.
         func ourHolds() -> [PowerAssertion] {
             AssertionReader.read().filter {
-                $0.rawName.hasPrefix(CaffeinationController.namePrefix)
+                $0.rawName.hasPrefix(CaffeinationController.namePrefix) && $0.ownerPID == pid
             }
         }
 
@@ -56,8 +57,14 @@ enum DebugDump {
         print("during: our assertions = \(held.count)")
         for h in held { print("  - \"\(h.rawName)\" type=\(h.rawType) ownerPID=\(h.ownerPID)") }
 
+        // A hold must include PreventSystemSleep — the idle types alone don't
+        // survive a lid close — and must still read as ONE This App row.
+        let holdsLidClosed = held.contains { $0.type == .preventSystemSleep }
+        print("PreventSystemSleep held: \(holdsLidClosed)")
+
         let buckets = AssertionClassifier.rows(from: AssertionReader.read(), ownPID: pid, showSystem: true)
-        print("This App bucket: \((buckets[.thisApp] ?? []).map(\.title))")
+        let selfRows = buckets[.thisApp] ?? []
+        print("This App bucket: \(selfRows.map(\.title))")
 
         controller.release()
         print("release() controller.isActive=\(controller.isActive)")
@@ -71,7 +78,7 @@ enum DebugDump {
         let migrationOK = (migratedFocus == .otherAppsFirst)
         print("migration: legacy {focus:otherAppsFirst} -> \(migratedFocus.map { "\($0)" } ?? "nil") \(migrationOK ? "OK" : "FAIL")")
 
-        let passed = ok && !held.isEmpty && !(buckets[.thisApp] ?? []).isEmpty && after == 0 && migrationOK
+        let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
     }
 

@@ -17,35 +17,60 @@ final class CaffeinationController {
 
     private(set) var isActive: Bool = false
 
-    /// The live assertion id (non-Sendable handle held only on the main actor).
-    private var assertionID: IOPMAssertionID = IOPMAssertionID(0)
+    /// The live assertion ids (non-Sendable handles held only on the main actor).
+    private var assertionIDs: [IOPMAssertionID] = []
 
     /// Whether our hold should also keep the display awake.
     var blocksDisplay: Bool = false
 
     // MARK: - Activate
 
-    /// Create our assertion. `seconds == nil` → indefinite; otherwise timed
-    /// with kernel auto-release. Returns true on success.
+    /// Create our hold. `seconds == nil` → indefinite; otherwise timed with
+    /// kernel auto-release. Returns true on success.
+    ///
+    /// A hold is TWO assertions sharing one name and timeout:
+    /// - an idle assertion (display or system, per `blocksDisplay`), which is
+    ///   what keeps the Mac and optionally the screen up on battery;
+    /// - `PreventSystemSleep`, which is the only type powerd honors across a lid
+    ///   close / maintenance sleep. The PreventUserIdle* types block idle sleep
+    ///   only, so without it a closed lid slept the Mac mid-hold. Apple scopes it
+    ///   to AC power, so on battery a closed lid still sleeps.
+    /// The idle assertion is required; PreventSystemSleep is best-effort so a
+    /// failure there never costs the user the hold itself.
     @discardableResult
     func activate(reason: String, seconds: Int?) -> Bool {
         // Release any existing hold first.
         if isActive { release() }
 
-        let typeName = (blocksDisplay
+        let idleType = (blocksDisplay
             ? kIOPMAssertionTypePreventUserIdleDisplaySleep
             : kIOPMAssertionTypePreventUserIdleSystemSleep) as String
-        let name = "\(CaffeinationController.namePrefix): \(reason)" as CFString
+        let name = "\(CaffeinationController.namePrefix): \(reason)"
 
+        guard let idleID = Self.create(type: idleType, name: name, seconds: seconds) else {
+            isActive = false
+            return false
+        }
+        assertionIDs = [idleID]
+        if let systemID = Self.create(type: kIOPMAssertionTypePreventSystemSleep as String,
+                                      name: name, seconds: seconds) {
+            assertionIDs.append(systemID)
+        }
+        isActive = true
+        return true
+    }
+
+    /// Create one assertion; nil on failure.
+    private static func create(type: String, name: String, seconds: Int?) -> IOPMAssertionID? {
         var newID = IOPMAssertionID(0)
         let rc: IOReturn
 
         if let seconds, seconds > 0 {
             // Timed: IOPMAssertionCreateWithProperties + timeout/auto-release.
             let properties: [String: Any] = [
-                kIOPMAssertionTypeKey as String: typeName,
+                kIOPMAssertionTypeKey as String: type,
                 kIOPMAssertionLevelKey as String: Int(kIOPMAssertionLevelOn),
-                kIOPMAssertionNameKey as String: name as String,
+                kIOPMAssertionNameKey as String: name,
                 kIOPMAssertionTimeoutKey as String: Double(seconds),
                 kIOPMAssertionTimeoutActionKey as String: kIOPMAssertionTimeoutActionRelease as String,
             ]
@@ -53,21 +78,13 @@ final class CaffeinationController {
         } else {
             // Indefinite.
             rc = IOPMAssertionCreateWithName(
-                typeName as CFString,
+                type as CFString,
                 IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                name,
+                name as CFString,
                 &newID
             )
         }
-
-        guard rc == kIOReturnSuccess else {
-            isActive = false
-            return false
-        }
-
-        assertionID = newID
-        isActive = true
-        return true
+        return rc == kIOReturnSuccess ? newID : nil
     }
 
     // MARK: - Release
@@ -75,15 +92,13 @@ final class CaffeinationController {
     func release() {
         guard isActive else { return }
         // Tolerate an id the kernel already auto-released (timed holds) — treat
-        // kIOReturnNotFound / kIOReturnBadArgument as "already gone".
-        let rc = IOPMAssertionRelease(assertionID)
-        if rc != kIOReturnSuccess
-            && rc != kIOReturnNotFound
-            && rc != kIOReturnBadArgument {
-            // Unexpected failure — still clear our state; the kernel handle is
-            // the source of truth and we no longer track it.
+        // kIOReturnNotFound / kIOReturnBadArgument as "already gone". Any other
+        // failure still clears our state; the kernel handle is the source of
+        // truth and we no longer track it.
+        for id in assertionIDs {
+            _ = IOPMAssertionRelease(id)
         }
-        assertionID = IOPMAssertionID(0)
+        assertionIDs = []
         isActive = false
     }
 

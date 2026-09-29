@@ -77,6 +77,11 @@ enum AssertionClassifier {
             bundleID = identity.bundleID
             iconBundleID = identity.iconBundleIDOrPath
             sfFallback = nil
+            // Our own hold is two assertions (idle + PreventSystemSleep, see
+            // CaffeinationController.activate) — show it as the one hold it is.
+            if b == .thisApp && a.rawName.hasPrefix(CaffeinationController.namePrefix) {
+                groupKey = "self"
+            }
         }
 
         // Apply any manual override. `natural` is what the automatic sorting
@@ -214,9 +219,13 @@ enum AssertionClassifier {
     /// One row standing for a whole group. The representative is the first
     /// member that still has a live owner, so a session that's genuinely working
     /// describes the group even when an orphaned, expiring member came first.
+    /// Failing that, a display-holding member wins so a group that keeps the
+    /// screen on says so rather than the weaker "keeping system awake".
     private static func merge(_ members: [AssertionRow]) -> AssertionRow? {
         guard let first = members.first else { return nil }
-        let representative = members.first { $0.sessionID != nil } ?? first
+        let representative = members.first { $0.sessionID != nil }
+            ?? members.first { AssertionType(rawType: $0.rawType).blocksDisplaySleep }
+            ?? first
         var row = representative
 
         // Stable id: the group outlives any individual member, and re-keying it
