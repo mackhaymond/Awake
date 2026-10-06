@@ -149,6 +149,7 @@ struct AwakeApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Owned here so setup runs at launch, not on first menu open.
     let model = AwakeModel()
+    private var sigtermSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Guarantee deterministic teardown. Info.plist enables sudden termination,
@@ -157,6 +158,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // termination notification is always delivered and our explicit teardown
         // contract holds.
         ProcessInfo.processInfo.disableSuddenTermination()
+
+        // A plain `kill`/`killall` sends SIGTERM, whose default action exits
+        // without applicationWillTerminate:. Route it through a normal quit so
+        // onQuit() still releases the hold and restores lid-close sleep.
+        signal(SIGTERM, SIG_IGN)
+        let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        term.setEventHandler { NSApp.terminate(nil) }
+        term.resume()
+        sigtermSource = term
 
         // Start the hotkey, login-item refresh, refresh timer, and seen-holder
         // recording immediately (onLaunch is idempotent).

@@ -29,6 +29,13 @@ final class LidCloseOverride {
     /// if the kernel refused, in which case nothing is left engaged.
     @discardableResult
     func engage() -> Bool {
+        // A dead watchdog means the switch may have been reset under us (the
+        // watchdog resets on SIGTERM, e.g. `killall Awake`) and nothing guards
+        // it — re-assert both.
+        if isEngaged, watchdog?.isRunning != true {
+            isEngaged = false
+            watchdog = nil
+        }
         guard !isEngaged else { return true }
         guard Self.setClamshellSleepDisabled(true) else { return false }
         isEngaged = true
@@ -43,9 +50,10 @@ final class LidCloseOverride {
         _ = Self.setClamshellSleepDisabled(false)
         isEngaged = false
         UserDefaults.standard.set(false, forKey: Self.engagedKey)
-        // SIGTERM: the watchdog only resets on its PARENT's exit, so stopping it
-        // can't race a later engage().
-        watchdog?.terminate()
+        // SIGUSR1 is the stand-down signal: its default action exits WITHOUT a
+        // reset, so stopping the watchdog can't race a later engage(). Any other
+        // signal makes it reset (see runWatchdog).
+        if let pid = watchdogPID { kill(pid, SIGUSR1) }
         watchdog = nil
     }
 
@@ -99,25 +107,34 @@ final class LidCloseOverride {
 
     /// Entry point for `Awake --lid-watchdog <pid>`: block until `pid` exits,
     /// reset clamshell sleep, exit. Never returns.
+    ///
+    /// The watchdog shares the app's process name, so `killall Awake` /
+    /// `pkill -x Awake` signal both at once — SIGTERM, SIGINT and SIGHUP
+    /// therefore reset before exiting, same as the parent dying. Only SIGUSR1
+    /// (disengage()'s stand-down) exits without a reset.
     nonisolated static func runWatchdog(parent: pid_t) -> Never {
-        // Outlive the parent's terminal/process group; only SIGTERM (a clean
-        // stand-down from disengage()) should stop us without a reset.
-        signal(SIGHUP, SIG_IGN)
-        signal(SIGINT, SIG_IGN)
-
-        let source = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit, queue: .main)
-        source.setEventHandler {
+        func resetAndExit() -> Never {
             _ = setClamshellSleepDisabled(false)
             exit(EXIT_SUCCESS)
         }
-        source.resume()
+
+        var sources: [DispatchSourceProtocol] = []
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)   // deliver via the dispatch source instead
+            let s = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            s.setEventHandler { resetAndExit() }
+            s.resume()
+            sources.append(s)
+        }
+
+        let exitSource = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit, queue: .main)
+        exitSource.setEventHandler { resetAndExit() }
+        exitSource.resume()
+        sources.append(exitSource)
 
         // The parent may already be gone before the source was armed.
-        if kill(parent, 0) != 0 && errno == ESRCH {
-            _ = setClamshellSleepDisabled(false)
-            exit(EXIT_SUCCESS)
-        }
-        dispatchMain()
+        if kill(parent, 0) != 0 && errno == ESRCH { resetAndExit() }
+        withExtendedLifetime(sources) { dispatchMain() }
     }
 }
 
