@@ -78,7 +78,19 @@ enum DebugDump {
         let migrationOK = (migratedFocus == .otherAppsFirst)
         print("migration: legacy {focus:otherAppsFirst} -> \(migratedFocus.map { "\($0)" } ?? "nil") \(migrationOK ? "OK" : "FAIL")")
 
-        let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK
+        // Lid-closed override: the kernel accepts it, a watchdog is armed while
+        // engaged, and both are gone after disengage.
+        let lid = LidCloseOverride()
+        let lidEngaged = lid.engage()
+        let watchdogPID = lid.watchdogPID
+        let watchdogAlive = watchdogPID.map { kill($0, 0) == 0 } ?? false
+        lid.disengage()
+        usleep(200_000)
+        let watchdogGone = watchdogPID.map { kill($0, 0) != 0 } ?? false
+        let lidOK = lidEngaged && watchdogAlive && watchdogGone && !lid.isEngaged
+        print("lid override: engaged=\(lidEngaged) watchdog=\(watchdogPID.map(String.init) ?? "none") alive=\(watchdogAlive) gone-after=\(watchdogGone) \(lidOK ? "OK" : "FAIL")")
+
+        let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK && lidOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
     }
 

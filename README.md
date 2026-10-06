@@ -99,6 +99,10 @@ Render the current settings' states to a PNG: `Awake.app/Contents/MacOS/Awake --
 - **Toggle / timed holds**: 15m / 30m / 1h / 2h / 4h / 8h / custom / "until time" /
   indefinite, with a live countdown and a "+15 min" extend. Timed holds use a kernel
   auto-release timeout (`IOPMAssertion`), so the hold ends even if the app is killed.
+- **Lid closed** — a hold keeps the Mac running with the lid shut, on battery too
+  (it turns off the kernel's clamshell sleep, as Amphetamine's closed-display mode
+  does). On battery it hands the lid back below a charge floor (default 20%). A
+  watchdog process resets clamshell sleep if Awake crashes or is killed.
 - **Global hotkey** to toggle from anywhere — default **⌃⌥⌘A** — rebindable in Settings
   (Carbon `RegisterEventHotKey`; no Accessibility permission needed).
 - **Stop Terminal Commands** — sends SIGTERM to the stray `caffeinate` processes

@@ -111,6 +111,7 @@ final class AwakeModel {
     // MARK: - Collaborators
 
     private let controller = CaffeinationController()
+    private let lidOverride = LidCloseOverride()
     private var hotKey: GlobalHotKey?
     private var timer: Timer?
     private let ownPID = getpid()
@@ -133,6 +134,7 @@ final class AwakeModel {
         guard !hasLaunched else { return }
         hasLaunched = true
 
+        LidCloseOverride.resetIfLeftEngaged()
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         installHotKey(from: prefs.hotKey)
         loginItem.refresh()
@@ -147,6 +149,7 @@ final class AwakeModel {
 
     func onQuit() {
         controller.invalidate()
+        lidOverride.disengage()
         hotKey?.invalidate()
         hotKey = nil
         timer?.invalidate()
@@ -179,6 +182,7 @@ final class AwakeModel {
             remaining = nil
             deadline = nil
         }
+        syncLidOverride(recheckPower: true)
         refresh()
         startTicking()
     }
@@ -194,12 +198,14 @@ final class AwakeModel {
         activeDuration = nil   // custom / "until time" / extended: no preset selected
         remaining = TimeInterval(seconds)
         deadline = Date().addingTimeInterval(TimeInterval(seconds))
+        syncLidOverride(recheckPower: true)
         refresh()
         startTicking()
     }
 
     func deactivate() {
         controller.release()
+        lidOverride.disengage()
         isActive = false
         activeDuration = nil
         remaining = nil
@@ -370,6 +376,7 @@ final class AwakeModel {
         if missingSelfHoldStreak >= 2 {
             missingSelfHoldStreak = 0
             controller.release()   // tolerant of an already-gone id
+            lidOverride.disengage()
             isActive = false
             activeDuration = nil
             remaining = nil
@@ -409,6 +416,36 @@ final class AwakeModel {
             } else {
                 remaining = rem
             }
+        }
+        if isActive { syncLidOverride() }
+    }
+
+    // MARK: - Lid closed
+
+    /// Latest power reading and when it was taken; re-read at most every 30 s
+    /// while a hold is live (the battery floor needn't be checked at 1 Hz).
+    private var power: PowerStatus?
+    private var powerCheckedAt: Date?
+
+    /// Engage the clamshell override while a hold is live, the preference is on,
+    /// and the Mac is on AC or above the battery floor; otherwise give the lid
+    /// back to the system. Runs every tick, so preference changes apply within a
+    /// second and a draining battery hands the lid back by itself.
+    func syncLidOverride(recheckPower: Bool = false) {
+        guard isActive, prefs.lidClosedStaysAwake else {
+            lidOverride.disengage()
+            return
+        }
+        if recheckPower || power == nil || (powerCheckedAt.map { -$0.timeIntervalSinceNow >= 30 } ?? true) {
+            power = PowerStatus.current()
+            powerCheckedAt = Date()
+        }
+        let status = power ?? PowerStatus(onAC: true, batteryPercent: nil)
+        let aboveFloor = status.onAC || (status.batteryPercent ?? 100) > prefs.lidClosedBatteryFloor
+        if aboveFloor {
+            lidOverride.engage()
+        } else {
+            lidOverride.disengage()
         }
     }
 

@@ -71,6 +71,19 @@ struct SettingsView: View {
                 Toggle("Notify when a timed session ends", isOn: $model.prefs.notifyOnExpiry)
                     .help("Post a notification when a timed session ends.")
             }
+            Section {
+                Toggle("Keep running with the lid closed", isOn: $model.prefs.lidClosedStaysAwake)
+                Picker("On battery, stop below", selection: $model.prefs.lidClosedBatteryFloor) {
+                    ForEach(AppPreferences.lidBatteryFloorChoices, id: \.self) { pct in
+                        Text("\(pct)%").tag(pct)
+                    }
+                }
+                .disabled(!model.prefs.lidClosedStaysAwake)
+            } header: {
+                Text("Lid Closed")
+            } footer: {
+                Text("While a session is on, closing the lid won't sleep your Mac, even on battery. Below the battery limit, closing the lid sleeps it again. On power, your Mac stays awake with the lid closed either way.")
+            }
             // Shortcut folded in from its former standalone tab (item 4).
             Section {
                 HStack {

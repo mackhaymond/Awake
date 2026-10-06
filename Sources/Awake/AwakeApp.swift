@@ -8,6 +8,16 @@ enum AwakeMain {
     static func main() {
         let args = Array(CommandLine.arguments.dropFirst())
 
+        // Internal: spawned by LidCloseOverride; resets clamshell sleep when
+        // the parent Awake exits. Not listed in --help.
+        if args.first == "--lid-watchdog" {
+            guard args.count == 2, let parent = pid_t(args[1]), parent > 1 else {
+                fail("--lid-watchdog requires a parent pid.")
+                return
+            }
+            LidCloseOverride.runWatchdog(parent: parent)
+        }
+
         // --help / -h: print usage and exit.
         if args.contains("--help") || args.contains("-h") {
             printUsage()

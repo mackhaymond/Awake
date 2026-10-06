@@ -21,7 +21,12 @@ final class AppPreferences {
         static let activateOnLaunch = "awake.activateOnLaunch"
         static let iconLayout      = "awake.iconLayout"
         static let showAppIcon     = "awake.iconShowAppIcon"
+        static let lidClosed       = "awake.lidClosedStaysAwake"
+        static let lidBatteryFloor = "awake.lidClosedBatteryFloor"
     }
+
+    /// Battery floors offered for the lid-closed override (percent).
+    static let lidBatteryFloorChoices = [10, 20, 30, 50]
 
     /// Max remembered holders; oldest by lastSeen are evicted past this.
     private static let seenCap = 100
@@ -199,6 +204,16 @@ final class AppPreferences {
         didSet { UserDefaults.standard.set(activateOnLaunch, forKey: Keys.activateOnLaunch) }
     }
 
+    /// Keep running with the lid closed even on battery (clamshell override).
+    var lidClosedStaysAwake: Bool {
+        didSet { UserDefaults.standard.set(lidClosedStaysAwake, forKey: Keys.lidClosed) }
+    }
+
+    /// On battery, give the lid back to the system at or below this charge.
+    var lidClosedBatteryFloor: Int {
+        didSet { UserDefaults.standard.set(lidClosedBatteryFloor, forKey: Keys.lidBatteryFloor) }
+    }
+
     private static func saveColor(_ color: ColorStore, _ key: String) {
         if let data = try? JSONEncoder().encode(color) {
             UserDefaults.standard.set(data, forKey: key)
@@ -272,6 +287,9 @@ final class AppPreferences {
         self.settingsTab       = defaults.integer(forKey: Keys.settingsTab)   // default 0
         self.notifyOnExpiry    = defaults.bool(forKey: Keys.notifyOnExpiry)   // default false
         self.activateOnLaunch  = defaults.bool(forKey: Keys.activateOnLaunch) // default false
+        self.lidClosedStaysAwake = defaults.object(forKey: Keys.lidClosed) as? Bool ?? true
+        let floor = defaults.integer(forKey: Keys.lidBatteryFloor)
+        self.lidClosedBatteryFloor = Self.lidBatteryFloorChoices.contains(floor) ? floor : 20
 
         // IconLayout decodes leniently now (missing keys fall back to defaults),
         // so this succeeds for both the current shape AND an older {focus}-only
