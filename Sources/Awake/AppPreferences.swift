@@ -23,6 +23,7 @@ final class AppPreferences {
         static let showAppIcon     = "awake.iconShowAppIcon"
         static let lidClosed       = "awake.lidClosedStaysAwake"
         static let lidBatteryFloor = "awake.lidClosedBatteryFloor"
+        static let showInMenuBar   = "awake.showInMenuBar"
     }
 
     /// Battery floors offered for the lid-closed override (percent).
@@ -214,6 +215,12 @@ final class AppPreferences {
         didSet { UserDefaults.standard.set(lidClosedBatteryFloor, forKey: Keys.lidBatteryFloor) }
     }
 
+    /// Show the menu-bar icon. Off when another app (a notch HUD) drives Awake
+    /// over its command channel; relaunching Awake then opens Settings.
+    var showInMenuBar: Bool {
+        didSet { UserDefaults.standard.set(showInMenuBar, forKey: Keys.showInMenuBar) }
+    }
+
     private static func saveColor(_ color: ColorStore, _ key: String) {
         if let data = try? JSONEncoder().encode(color) {
             UserDefaults.standard.set(data, forKey: key)
@@ -290,6 +297,7 @@ final class AppPreferences {
         self.lidClosedStaysAwake = defaults.object(forKey: Keys.lidClosed) as? Bool ?? true
         let floor = defaults.integer(forKey: Keys.lidBatteryFloor)
         self.lidClosedBatteryFloor = Self.lidBatteryFloorChoices.contains(floor) ? floor : 20
+        self.showInMenuBar = defaults.object(forKey: Keys.showInMenuBar) as? Bool ?? true
 
         // IconLayout decodes leniently now (missing keys fall back to defaults),
         // so this succeeds for both the current shape AND an older {focus}-only

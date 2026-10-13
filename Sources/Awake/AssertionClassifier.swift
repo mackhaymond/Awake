@@ -239,6 +239,7 @@ enum AssertionClassifier {
             : members.compactMap(\.timeoutSecsLeft).max()
 
         let sessions = Set(members.compactMap(\.sessionID)).count
+        row.sessionCount = max(1, sessions)
         if sessions > 1, let noun = representative.groupNoun {
             row.reason = representative.reason.isEmpty
                 ? "\(sessions) \(noun)s"

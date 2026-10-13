@@ -234,6 +234,7 @@ struct AssertionRow: Identifiable, Sendable {
     var groupNoun: String? = nil    // "session" / "run", for the collapsed count
     var sessionID: Int32? = nil     // distinct holder within a group
     var note: String? = nil         // longer explanation, shown as a tooltip
+    var sessionCount = 1            // distinct sessions a collapsed group row stands for
 
     /// Canonical (primary) identity key — the most stable token. Used for storing
     /// an override / seen entry and for de-duplicating rows in the UI.

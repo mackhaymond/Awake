@@ -148,8 +148,11 @@ final class AwakeModel {
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         installHotKey(from: prefs.hotKey)
         loginItem.refresh()
-        queryListener = StateBroadcast.Listener(name: StateBroadcast.queryName) { [weak self] in
-            self?.broadcast(.snapshot)
+        queryListener = StateBroadcast.Listener(name: StateBroadcast.queryName) { [weak self] _ in
+            self?.broadcast(.snapshot, withHolders: true)
+        }
+        commandListener = StateBroadcast.Listener(name: StateBroadcast.commandName) { [weak self] info in
+            self?.receiveCommand(info)
         }
         refresh()
         startTicking()   // slow idle cadence to keep the bucket list fresh
@@ -164,12 +167,14 @@ final class AwakeModel {
         let wasActive = isActive
         controller.invalidate()
         lidOverride.disengage()
-        if wasActive {
+        // A `quit` command gets its `off` reply even from idle.
+        if wasActive || commandID != nil {
             isActive = false
             deadline = nil
             broadcast(.off)
         }
         queryListener = nil
+        commandListener = nil
         hotKey?.invalidate()
         hotKey = nil
         timer?.invalidate()
@@ -210,7 +215,8 @@ final class AwakeModel {
     }
 
     /// Activate with an arbitrary number of seconds (custom timer from the UI).
-    func activateCustom(seconds: Int, event: StateBroadcast.Event? = nil) {
+    /// `preset` keeps a preset's highlight across a re-create (display toggle).
+    func activateCustom(seconds: Int, event: StateBroadcast.Event? = nil, preset: TimerDuration? = nil) {
         let wasActive = isActive
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         guard seconds > 0 else { activate(duration: .indefinite, event: event); return }
@@ -218,7 +224,7 @@ final class AwakeModel {
         let ok = controller.activate(reason: "Timed hold (\(label))", seconds: seconds)
         guard ok else { if wasActive { endHold(.off) }; return }
         isActive = true
-        activeDuration = nil   // custom / "until time" / extended: no preset selected
+        activeDuration = preset   // nil for custom / "until time" / extended
         remaining = TimeInterval(seconds)
         deadline = Date().addingTimeInterval(TimeInterval(seconds))
         holdStarted(wasActive: wasActive, event: event)
@@ -253,25 +259,186 @@ final class AwakeModel {
     }
 
     /// Post the current state. Off/ended still carry the finished stretch's start.
-    private func broadcast(_ event: StateBroadcast.Event) {
+    /// While a command runs, posts carry its id; `set` mutes them and replies once.
+    private func broadcast(_ event: StateBroadcast.Event, withHolders: Bool = false) {
+        guard !broadcastMuted else { return }
+        let lidOK = isActive && lidOverride.isEngaged
+        let power = PowerStatus.current()
+        var holders: [StateBroadcast.Holder]?
+        if withHolders || watchUntil != nil {
+            holders = StateBroadcast.Holder.from(buckets)
+        }
         let state = StateBroadcast.State(
             active: isActive,
             start: holdStart,
             end: isActive ? deadline : nil,
-            displayOn: prefs.ourHoldBlocksDisplay,
-            lidOK: isActive && lidOverride.isEngaged
+            displayOn: isActive && prefs.ourHoldBlocksDisplay,
+            lidOK: lidOK,
+            preset: isActive ? activeDuration?.rawValue : nil,
+            lidPaused: isActive && prefs.lidClosedStaysAwake && !lidOK,
+            prefDisplayAwake: prefs.ourHoldBlocksDisplay,
+            prefLidClosed: prefs.lidClosedStaysAwake,
+            prefLidBatteryFloor: prefs.lidClosedBatteryFloor,
+            iconHidden: !prefs.showInMenuBar,
+            defaultDuration: prefs.defaultDuration.rawValue,
+            hotkey: prefs.hotKey.displayString,
+            onAC: power.onAC,
+            battery: power.batteryPercent,
+            holders: holders,
+            youCount: holders == nil ? nil : ownCaffeinateRows.count
         )
-        broadcastLidOK = state.lidOK
-        StateBroadcast.post(event, state)
+        broadcastLidOK = lidOK
+        if let holders {
+            sentHolderIdentity = StateBroadcast.Holder.signature(holders)
+            sentHoldersAt = Date()
+        }
+        StateBroadcast.post(event, state, requestID: commandID)
+        commandReplied = commandID != nil
+    }
+
+    // MARK: - Holder watch
+
+    /// While set and in the future, pushes carry `holders` and a change to the
+    /// holder list posts a snapshot (at most 1/s). A listener renews it; it
+    /// lapses on its own so a crashed listener can't keep us at 1 Hz.
+    private var watchUntil: Date?
+    private static let watchLease: TimeInterval = 60
+    private var sentHolderIdentity: [[String]]?
+    private var sentHoldersAt: Date?
+
+    private func setWatch(_ on: Bool) {
+        let wasWatching = watchUntil != nil
+        watchUntil = on ? Date().addingTimeInterval(Self.watchLease) : nil
+        if !on { sentHolderIdentity = nil }
+        if wasWatching != on {
+            startTicking()
+            if on { refresh() }
+        }
+    }
+
+    /// After each refresh: lapse an unrenewed watch, else post if the list changed.
+    private func announceHolderChanges() {
+        guard let until = watchUntil else { return }
+        guard until > Date() else { setWatch(false); return }
+        let identity = StateBroadcast.Holder.signature(StateBroadcast.Holder.from(buckets))
+        guard identity != sentHolderIdentity else { return }
+        // Throttled: a skipped change is still pending and the next 1 Hz refresh posts it.
+        if let sent = sentHoldersAt, -sent.timeIntervalSinceNow < 1 { return }
+        broadcast(.snapshot)
     }
 
     /// Set the "keep display awake" preference and apply it to any live hold in
     /// ONE place, so the menu toggle and the Settings toggle share a single side
     /// effect (no double re-creation of the assertion when both are on screen).
+    /// Idle, there's no re-create to announce it, so post a snapshot directly.
     func setDisplayHold(_ value: Bool) {
         guard prefs.ourHoldBlocksDisplay != value else { return }
         prefs.ourHoldBlocksDisplay = value
-        applyDisplayHoldPreference()
+        if isActive {
+            applyDisplayHoldPreference()
+        } else {
+            broadcast(.snapshot)
+        }
+    }
+
+    /// "Keep running with the lid closed", applied to a live hold right away.
+    func setLidClosed(_ value: Bool) {
+        guard prefs.lidClosedStaysAwake != value else { return }
+        prefs.lidClosedStaysAwake = value
+        syncLidOverride(announce: false)
+        broadcast(.snapshot)
+    }
+
+    /// Settings changed a value the payload carries but no setter above owns
+    /// (battery floor, default duration, hotkey): apply and announce it.
+    func announcePrefs() {
+        if isActive { syncLidOverride(recheckPower: true, announce: false) }
+        broadcast(.snapshot)
+    }
+
+    /// "Show in menu bar". Also the MenuBarExtra's isInserted setter, so a
+    /// ⌘-drag out of the menu bar lands here too.
+    func setShowInMenuBar(_ value: Bool) {
+        guard prefs.showInMenuBar != value else { return }
+        prefs.showInMenuBar = value
+        broadcast(.snapshot)
+    }
+
+    // MARK: - Commands
+
+    /// The id of the command being handled; state posts meanwhile carry it.
+    private var commandID: String?
+    /// Whether a post has answered the current command yet.
+    private var commandReplied = false
+    /// Holds back posts while `set` applies several settings, so it replies once.
+    private var broadcastMuted = false
+
+    private var commandListener: StateBroadcast.Listener?
+
+    private func receiveCommand(_ info: [AnyHashable: Any]?) {
+        switch StateBroadcast.Command.parse(info) {
+        case .success(let command):
+            StateBroadcast.log.notice("command \(command.action.name, privacy: .public) id=\(command.id, privacy: .public)")
+            handle(command)
+        case .failure(let rejection):
+            StateBroadcast.log.error("ignored command id=\(rejection.id ?? "-", privacy: .public): \(rejection.reason, privacy: .public)")
+        }
+    }
+
+    /// Run a command the way the matching menu/Settings control would, then
+    /// make sure exactly one state post carries its id (a no-op answers with
+    /// a snapshot).
+    func handle(_ command: StateBroadcast.Command) {
+        commandID = command.id
+        commandReplied = false
+        defer {
+            commandID = nil
+            commandReplied = false
+            broadcastMuted = false
+        }
+
+        switch command.action {
+        case .start(.indefinite):
+            activate(duration: .indefinite)
+        case .start(.defaultDuration):
+            activate(duration: prefs.defaultDuration)
+        case .start(.seconds(let seconds)):
+            if let preset = TimerDuration(rawValue: seconds), preset != .indefinite {
+                activate(duration: preset)
+            } else {
+                activateCustom(seconds: seconds)
+            }
+        case .start(.until(let date)):
+            // Round up so the hold never ends before `until` (parse ensured ≥ 1 s).
+            activateCustom(seconds: max(1, Int(date.timeIntervalSinceNow.rounded(.up))))
+        case .extend(let seconds):
+            // Same as "+15 min": only a running timed hold has an end to move.
+            if isActive, let rem = remaining { activateCustom(seconds: Int(rem) + seconds) }
+        case .stop:
+            if isActive { deactivate() }
+        case .set(let settings):
+            let wasActive = isActive
+            broadcastMuted = true
+            if let hidden = settings.iconHidden { setShowInMenuBar(!hidden) }
+            if let lid = settings.lidClosed { setLidClosed(lid) }
+            if let display = settings.displayAwake { setDisplayHold(display) }
+            broadcastMuted = false
+            // A failed display re-create ends the hold; say so as `off`.
+            broadcast(wasActive && !isActive ? .off : .snapshot)
+        case .openSettings:
+            // Opening takes most of a second; reply first so the caller's
+            // spinner doesn't wait on the window.
+            DispatchQueue.main.async { SettingsWindow.open() }
+        case .watch(let on):
+            setWatch(on)
+        case .stopCommands:
+            // The holder list catches up on the next refresh (a watched push).
+            killStrayCaffeinate()
+        case .quit:
+            // onQuit posts `off` with this id; terminate doesn't return.
+            NSApp.terminate(nil)
+        }
+        if !commandReplied { broadcast(.snapshot) }
     }
 
     /// Re-create the live assertion with the current `blocksDisplay` preference.
@@ -285,12 +452,10 @@ final class AwakeModel {
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         if let rem = remaining {
             let seconds = max(1, Int(rem.rounded()))
-            // Re-creating via activateCustom() nils activeDuration, but the chosen
-            // preset is unchanged here — only the assertion TYPE (display vs system)
-            // is swapped — so preserve the duration-button highlight across it.
-            let saved = activeDuration
-            activateCustom(seconds: seconds, event: .snapshot)
-            if isActive { activeDuration = saved }   // a failed re-create ended the hold
+            // The chosen preset is unchanged here — only the assertion TYPE
+            // (display vs system) is swapped — so carry the duration-button
+            // highlight (and the broadcast `preset`) across the re-create.
+            activateCustom(seconds: seconds, event: .snapshot, preset: activeDuration)
         } else {
             activate(duration: .indefinite, event: .snapshot)
         }
@@ -395,6 +560,7 @@ final class AwakeModel {
         // Reconcile our own hold against IOKit truth: timed holds auto-release in
         // the kernel, which can leave isActive/remaining stale.
         reconcileSelfHold()
+        announceHolderChanges()
     }
 
     /// Number of consecutive refreshes where we believed we held sleep but the
@@ -432,10 +598,11 @@ final class AwakeModel {
 
     // MARK: - Timer
 
-    /// 1 Hz while caffeinating (countdown + live list); 5 s while idle.
+    /// 1 Hz while caffeinating (countdown + live list) or while a listener
+    /// watches the holder list; 5 s otherwise.
     private func startTicking() {
         timer?.invalidate()
-        let interval: TimeInterval = isActive ? 1.0 : 5.0
+        let interval: TimeInterval = isActive || watchUntil != nil ? 1.0 : 5.0
         let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.tick()

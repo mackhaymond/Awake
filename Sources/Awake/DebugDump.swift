@@ -101,21 +101,82 @@ enum DebugDump {
     /// real round trip through the distributed notification center.
     @MainActor
     private static func broadcastSelfTest() -> Bool {
-        let start = Date(timeIntervalSince1970: 1_000)
-        let end = Date(timeIntervalSince1970: 8_200)
-        let timed = StateBroadcast.payload(.extended, .init(active: true, start: start, end: end,
-                                                            displayOn: true, lidOK: true))
-        let idle = StateBroadcast.payload(.snapshot, .init(active: false, start: nil, end: nil,
-                                                           displayOn: false, lidOK: false))
+        func state(active: Bool, start: Date? = nil, end: Date? = nil,
+                   holders: [StateBroadcast.Holder]? = nil) -> StateBroadcast.State {
+            .init(active: active, start: start, end: end, displayOn: active, lidOK: active,
+                  preset: active ? 7200 : nil, lidPaused: false, prefDisplayAwake: true,
+                  prefLidClosed: true, prefLidBatteryFloor: 20, iconHidden: false,
+                  defaultDuration: -1, hotkey: "⌃⌥⌘A", onAC: true, battery: nil,
+                  holders: holders, youCount: holders.map { _ in 1 })
+        }
+        let holder = StateBroadcast.Holder(bucket: "apps", title: "Claude Code", reason: "working",
+                                           secsLeft: 280, bundleID: nil, count: 2, kind: "claudeCode")
+        let timed = StateBroadcast.payload(.extended, state(active: true,
+                                                            start: Date(timeIntervalSince1970: 1_000),
+                                                            end: Date(timeIntervalSince1970: 8_200),
+                                                            holders: [holder]),
+                                           requestID: "r1")
+        let idle = StateBroadcast.payload(.snapshot, state(active: false))
+        let holders = timed["holders"] as? [[String: Any]]
         let shapeOK = timed["v"] as? Int == 1
             && timed["event"] as? String == "extended"
             && timed["active"] as? Bool == true
             && timed["start"] as? Double == 1_000
             && timed["end"] as? Double == 8_200
-            && timed["displayOn"] as? Bool == true
-            && timed["lidOK"] as? Bool == true
-            && idle["start"] == nil && idle["end"] == nil
+            && timed["preset"] as? Int == 7200
+            && timed["requestId"] as? String == "r1"
+            && timed["youCount"] as? Int == 1
+            && holders?.first?["secsLeft"] as? Double == 280
+            && holders?.first?["count"] as? Int == 2
+            && holders?.first?["bundleID"] == nil
+            && idle["start"] == nil && idle["end"] == nil && idle["preset"] == nil
+            && idle["holders"] == nil && idle["youCount"] == nil && idle["requestId"] == nil
+            && idle["hotkey"] as? String == "⌃⌥⌘A"
             && PropertyListSerialization.propertyList(timed, isValidFor: .binary)
+
+        // Commands: what's accepted, and that malformed input is dropped.
+        typealias Command = StateBroadcast.Command
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func parse(_ info: [String: Any]) -> Command.Action? {
+            try? Command.parse(info, now: now).get().action
+        }
+        let base: [String: Any] = ["v": 1, "id": "x"]
+        func cmd(_ extra: [String: Any]) -> [String: Any] { base.merging(extra) { $1 } }
+        let accepted: [(String, [String: Any], Command.Action)] = [
+            ("start", cmd(["action": "start"]), .start(.indefinite)),
+            ("start default", cmd(["action": "start", "default": true]), .start(.defaultDuration)),
+            ("start 90m", cmd(["action": "start", "minutes": 90]), .start(.seconds(5400))),
+            ("start until", cmd(["action": "start", "until": 1_003_600.0]),
+             .start(.until(Date(timeIntervalSince1970: 1_003_600)))),
+            ("extend", cmd(["action": "extend"]), .extend(seconds: 900)),
+            ("stop", cmd(["action": "stop"]), .stop),
+            ("set", cmd(["action": "set", "lidClosed": false]), .set(.init(lidClosed: false))),
+            ("watch", cmd(["action": "watch", "on": true]), .watch(true)),
+            ("stopCommands", cmd(["action": "stopCommands"]), .stopCommands),
+            ("quit", cmd(["action": "quit"]), .quit),
+            ("openSettings", cmd(["action": "openSettings"]), .openSettings),
+        ]
+        let rejected: [(String, [String: Any])] = [
+            ("v2", cmd(["v": 2, "action": "stop"])),
+            ("v as bool", cmd(["v": true, "action": "stop"])),
+            ("no id", ["v": 1, "action": "stop"]),
+            ("long id", cmd(["id": String(repeating: "a", count: 65), "action": "stop"])),
+            ("unknown action", cmd(["action": "explode"])),
+            ("minutes 0", cmd(["action": "start", "minutes": 0])),
+            ("minutes 1441", cmd(["action": "start", "minutes": 1441])),
+            ("minutes string", cmd(["action": "start", "minutes": "15"])),
+            ("minutes + until", cmd(["action": "start", "minutes": 15, "until": 1_003_600.0])),
+            ("default + minutes", cmd(["action": "start", "default": true, "minutes": 15])),
+            ("until past", cmd(["action": "start", "until": 999_000.0])),
+            ("until > 7d", cmd(["action": "start", "until": 1_000_000.0 + 8 * 86_400])),
+            ("set empty", cmd(["action": "set"])),
+            ("set number as bool", cmd(["action": "set", "lidClosed": 1])),
+            ("watch missing on", cmd(["action": "watch"])),
+        ]
+        let badAccepts = accepted.filter { parse($0.1) != $0.2 }.map(\.0)
+        let badRejects = rejected.filter { parse($0.1) != nil }.map(\.0)
+        let commandsOK = badAccepts.isEmpty && badRejects.isEmpty
+        if !commandsOK { print("commands: wrongly parsed \(badAccepts), wrongly accepted \(badRejects)") }
 
         // Only touched on the main queue (observer queue + this loop).
         final class Inbox: @unchecked Sendable { var info: [AnyHashable: Any]? }
@@ -126,8 +187,7 @@ enum DebugDump {
         let token = center.addObserver(forName: testName, object: nil, queue: .main) {
             inbox.info = $0.userInfo
         }
-        StateBroadcast.post(.snapshot, .init(active: false, start: nil, end: nil,
-                                             displayOn: false, lidOK: false), name: testName)
+        StateBroadcast.post(.snapshot, state(active: false), name: testName)
         let deadline = Date().addingTimeInterval(2)
         while inbox.info == nil && Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
@@ -136,8 +196,8 @@ enum DebugDump {
         let roundTripOK = inbox.info?["event"] as? String == "snapshot"
             && inbox.info?["pid"] as? Int == Int(getpid())
 
-        let passed = shapeOK && roundTripOK
-        print("state broadcast: payload=\(shapeOK ? "OK" : "FAIL") round-trip=\(roundTripOK ? "OK" : "FAIL")")
+        let passed = shapeOK && commandsOK && roundTripOK
+        print("state broadcast: payload=\(shapeOK ? "OK" : "FAIL") commands=\(commandsOK ? "OK" : "FAIL") round-trip=\(roundTripOK ? "OK" : "FAIL")")
         return passed
     }
 

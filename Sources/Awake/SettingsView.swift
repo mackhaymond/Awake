@@ -25,6 +25,10 @@ struct SettingsView: View {
                 .tag(4)
         }
         .frame(minWidth: 480, minHeight: 560)
+        // Values the state broadcast carries that bind straight to prefs.
+        .onChange(of: model.prefs.lidClosedBatteryFloor) { model.announcePrefs() }
+        .onChange(of: model.prefs.defaultDuration) { model.announcePrefs() }
+        .onChange(of: model.prefs.hotKey) { model.announcePrefs() }
         .onAppear {
             // The Shortcut tab was folded into General; clamp a persisted index
             // that pointed past the now-shorter tab list so a valid tab shows.
@@ -59,6 +63,11 @@ struct SettingsView: View {
                 .help("The timer length used when you turn on Keep Awake, and for Start active on launch.")
                 Toggle("Start active on launch", isOn: $model.prefs.activateOnLaunch)
                     .help("Begin a session (using the default duration) as soon as Awake launches.")
+                Toggle("Show in menu bar", isOn: Binding(
+                    get: { model.prefs.showInMenuBar },
+                    set: { model.setShowInMenuBar($0) }
+                ))
+                .help("When hidden, open Awake again from Finder or Spotlight to get back to Settings.")
             }
             Section("While Active") {
                 // Routed through the model so the live assertion is re-created with
@@ -72,7 +81,10 @@ struct SettingsView: View {
                     .help("Post a notification when a timed session ends.")
             }
             Section {
-                Toggle("Keep running with the lid closed", isOn: $model.prefs.lidClosedStaysAwake)
+                Toggle("Keep running with the lid closed", isOn: Binding(
+                    get: { model.prefs.lidClosedStaysAwake },
+                    set: { model.setLidClosed($0) }
+                ))
                 Picker("On battery, stop below", selection: $model.prefs.lidClosedBatteryFloor) {
                     ForEach(AppPreferences.lidBatteryFloorChoices, id: \.self) { pct in
                         Text("\(pct)%").tag(pct)

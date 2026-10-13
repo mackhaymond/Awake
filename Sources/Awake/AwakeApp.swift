@@ -106,7 +106,11 @@ struct AwakeApp: App {
     private var model: AwakeModel { appDelegate.model }
 
     var body: some Scene {
-        MenuBarExtra {
+        // isInserted also hands a ⌘-drag out of the menu bar to the model.
+        MenuBarExtra(isInserted: Binding(
+            get: { model.prefs.showInMenuBar },
+            set: { model.setShowInMenuBar($0) }
+        )) {
             MenuContentView(model: model)
                 .onAppear { model.onLaunch() }   // idempotent fallback
         } label: {
@@ -172,6 +176,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // recording immediately (onLaunch is idempotent).
         model.onLaunch()
 
+        // With the menu-bar icon hidden, a launch from Finder/Spotlight/`open`
+        // must still lead somewhere — except at login, where it'd nag daily.
+        if !model.prefs.showInMenuBar && !Self.launchedAsLoginItem {
+            DispatchQueue.main.async { SettingsWindow.open() }
+        }
+
         // When any Settings window closes, drop back to accessory (no Dock icon).
         // NSWindow notifications post on the main thread; the @objc selector
         // receives the Notification on the main actor.
@@ -196,5 +206,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model.onQuit()
+    }
+
+    /// Opening Awake again while it runs (Finder, `open -a`) with the icon
+    /// hidden opens Settings, the only way back in.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !model.prefs.showInMenuBar { SettingsWindow.open() }
+        return true
+    }
+
+    /// The launch Apple event says whether the system started us as a login item.
+    private static var launchedAsLoginItem: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventID == kAEOpenApplication else { return false }
+        return event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+}
+
+/// Opens the SwiftUI Settings scene from AppKit code (a command, a relaunch),
+/// where `@Environment(\.openSettings)` isn't reachable. macOS 14+ ignores the
+/// old `showSettingsWindow:` action sent directly, but the app menu's own
+/// Settings… item still works, so invoke that.
+@MainActor
+enum SettingsWindow {
+    static func open(retries: Int = 5) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if let (menu, index) = settingsItem(in: NSApp.mainMenu) {
+            menu.performActionForItem(at: index)
+        } else if retries > 0 {
+            // Right at launch SwiftUI may not have built the main menu yet.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { open(retries: retries - 1) }
+        } else {
+            StateBroadcast.log.error("Settings menu item not found")
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
+    }
+
+    private static func settingsItem(in menu: NSMenu?) -> (NSMenu, Int)? {
+        guard let menu else { return nil }
+        for (index, item) in menu.items.enumerated() {
+            if item.action == Selector(("showSettingsWindow:"))
+                || (item.keyEquivalent == "," && item.keyEquivalentModifierMask == .command) {
+                return (menu, index)
+            }
+            if let found = settingsItem(in: item.submenu) { return found }
+        }
+        return nil
     }
 }
