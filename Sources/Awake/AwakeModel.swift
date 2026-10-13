@@ -128,6 +128,16 @@ final class AwakeModel {
     /// without re-deriving it from `remaining` each tick.
     var endDate: Date? { deadline }
 
+    /// When the current stretch of holding began. Kept across extensions and
+    /// re-creations so listeners see one continuous hold (nil = idle).
+    private var holdStart: Date?
+
+    /// lidOK as last broadcast, so a mid-hold lid-override change posts once.
+    private var broadcastLidOK = false
+
+    /// Answers `com.mackhaymond.Awake.query` with a snapshot.
+    private var queryListener: StateBroadcast.Listener?
+
     // MARK: - Lifecycle
 
     func onLaunch() {
@@ -138,6 +148,9 @@ final class AwakeModel {
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         installHotKey(from: prefs.hotKey)
         loginItem.refresh()
+        queryListener = StateBroadcast.Listener(name: StateBroadcast.queryName) { [weak self] in
+            self?.broadcast(.snapshot)
+        }
         refresh()
         startTicking()   // slow idle cadence to keep the bucket list fresh
 
@@ -148,8 +161,15 @@ final class AwakeModel {
     }
 
     func onQuit() {
+        let wasActive = isActive
         controller.invalidate()
         lidOverride.disengage()
+        if wasActive {
+            isActive = false
+            deadline = nil
+            broadcast(.off)
+        }
+        queryListener = nil
         hotKey?.invalidate()
         hotKey = nil
         timer?.invalidate()
@@ -166,12 +186,16 @@ final class AwakeModel {
         }
     }
 
-    func activate(duration: TimerDuration) {
+    /// `event` overrides what's broadcast; by default `on` from idle and
+    /// `extended` when replacing a running hold.
+    func activate(duration: TimerDuration, event: StateBroadcast.Event? = nil) {
+        let wasActive = isActive
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         let seconds = duration.seconds
         let reason = duration == .indefinite ? "Manual hold" : "Timed hold (\(duration.label))"
         let ok = controller.activate(reason: reason, seconds: seconds)
-        guard ok else { return }
+        // controller.activate() released the old hold before failing.
+        guard ok else { if wasActive { endHold(.off) }; return }
 
         isActive = true
         activeDuration = duration
@@ -182,36 +206,63 @@ final class AwakeModel {
             remaining = nil
             deadline = nil
         }
-        syncLidOverride(recheckPower: true)
-        refresh()
-        startTicking()
+        holdStarted(wasActive: wasActive, event: event)
     }
 
     /// Activate with an arbitrary number of seconds (custom timer from the UI).
-    func activateCustom(seconds: Int) {
+    func activateCustom(seconds: Int, event: StateBroadcast.Event? = nil) {
+        let wasActive = isActive
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
-        guard seconds > 0 else { activate(duration: .indefinite); return }
+        guard seconds > 0 else { activate(duration: .indefinite, event: event); return }
         let label = seconds < 60 ? "\(seconds) sec" : "\(seconds / 60) min"
         let ok = controller.activate(reason: "Timed hold (\(label))", seconds: seconds)
-        guard ok else { return }
+        guard ok else { if wasActive { endHold(.off) }; return }
         isActive = true
         activeDuration = nil   // custom / "until time" / extended: no preset selected
         remaining = TimeInterval(seconds)
         deadline = Date().addingTimeInterval(TimeInterval(seconds))
-        syncLidOverride(recheckPower: true)
+        holdStarted(wasActive: wasActive, event: event)
+    }
+
+    /// Shared tail of activate()/activateCustom(), once the assertions exist.
+    private func holdStarted(wasActive: Bool, event: StateBroadcast.Event?) {
+        if !wasActive { holdStart = Date() }
+        syncLidOverride(recheckPower: true, announce: false)
+        broadcast(event ?? (wasActive ? .extended : .on))
         refresh()
         startTicking()
     }
 
     func deactivate() {
+        endHold(.off)
+    }
+
+    /// Release the hold and tell listeners why: `off` (stopped) or `ended`
+    /// (a timed hold ran out).
+    private func endHold(_ event: StateBroadcast.Event) {
         controller.release()
         lidOverride.disengage()
         isActive = false
         activeDuration = nil
         remaining = nil
         deadline = nil
+        broadcast(event)
+        holdStart = nil
         refresh()
         startTicking()   // drop back to slow cadence
+    }
+
+    /// Post the current state. Off/ended still carry the finished stretch's start.
+    private func broadcast(_ event: StateBroadcast.Event) {
+        let state = StateBroadcast.State(
+            active: isActive,
+            start: holdStart,
+            end: isActive ? deadline : nil,
+            displayOn: prefs.ourHoldBlocksDisplay,
+            lidOK: isActive && lidOverride.isEngaged
+        )
+        broadcastLidOK = state.lidOK
+        StateBroadcast.post(event, state)
     }
 
     /// Set the "keep display awake" preference and apply it to any live hold in
@@ -238,10 +289,10 @@ final class AwakeModel {
             // preset is unchanged here — only the assertion TYPE (display vs system)
             // is swapped — so preserve the duration-button highlight across it.
             let saved = activeDuration
-            activateCustom(seconds: seconds)
-            activeDuration = saved
+            activateCustom(seconds: seconds, event: .snapshot)
+            if isActive { activeDuration = saved }   // a failed re-create ended the hold
         } else {
-            activate(duration: .indefinite)
+            activate(duration: .indefinite, event: .snapshot)
         }
     }
 
@@ -375,12 +426,7 @@ final class AwakeModel {
         missingSelfHoldStreak += 1
         if missingSelfHoldStreak >= 2 {
             missingSelfHoldStreak = 0
-            controller.release()   // tolerant of an already-gone id
-            lidOverride.disengage()
-            isActive = false
-            activeDuration = nil
-            remaining = nil
-            deadline = nil
+            endHold(.ended)   // controller.release() tolerates an already-gone id
         }
     }
 
@@ -411,7 +457,7 @@ final class AwakeModel {
             let rem = deadline.timeIntervalSinceNow
             if rem <= 0 {
                 // Kernel will also auto-release; mirror that in UI.
-                deactivate()
+                endHold(.ended)
                 if prefs.notifyOnExpiry { Self.notifyExpiry() }
             } else {
                 remaining = rem
@@ -430,8 +476,15 @@ final class AwakeModel {
     /// Engage the clamshell override while a hold is live, the preference is on,
     /// and the Mac is on AC or above the battery floor; otherwise give the lid
     /// back to the system. Runs every tick, so preference changes apply within a
-    /// second and a draining battery hands the lid back by itself.
-    func syncLidOverride(recheckPower: Bool = false) {
+    /// second and a draining battery hands the lid back by itself. A change
+    /// mid-hold is broadcast as a snapshot unless the caller (`announce: false`)
+    /// is about to post its own event.
+    func syncLidOverride(recheckPower: Bool = false, announce: Bool = true) {
+        defer {
+            if announce, isActive, lidOverride.isEngaged != broadcastLidOK {
+                broadcast(.snapshot)
+            }
+        }
         guard isActive, prefs.lidClosedStaysAwake else {
             lidOverride.disengage()
             return

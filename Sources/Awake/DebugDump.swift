@@ -90,8 +90,55 @@ enum DebugDump {
         let lidOK = lidEngaged && watchdogAlive && watchdogGone && !lid.isEngaged
         print("lid override: engaged=\(lidEngaged) watchdog=\(watchdogPID.map(String.init) ?? "none") alive=\(watchdogAlive) gone-after=\(watchdogGone) \(lidOK ? "OK" : "FAIL")")
 
+        let broadcastOK = broadcastSelfTest()
+
         let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK && lidOK
+            && broadcastOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
+    }
+
+    /// State broadcast: the payload keeps to the v1 contract, and a post makes a
+    /// real round trip through the distributed notification center.
+    @MainActor
+    private static func broadcastSelfTest() -> Bool {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let end = Date(timeIntervalSince1970: 8_200)
+        let timed = StateBroadcast.payload(.extended, .init(active: true, start: start, end: end,
+                                                            displayOn: true, lidOK: true))
+        let idle = StateBroadcast.payload(.snapshot, .init(active: false, start: nil, end: nil,
+                                                           displayOn: false, lidOK: false))
+        let shapeOK = timed["v"] as? Int == 1
+            && timed["event"] as? String == "extended"
+            && timed["active"] as? Bool == true
+            && timed["start"] as? Double == 1_000
+            && timed["end"] as? Double == 8_200
+            && timed["displayOn"] as? Bool == true
+            && timed["lidOK"] as? Bool == true
+            && idle["start"] == nil && idle["end"] == nil
+            && PropertyListSerialization.propertyList(timed, isValidFor: .binary)
+
+        // Only touched on the main queue (observer queue + this loop).
+        final class Inbox: @unchecked Sendable { var info: [AnyHashable: Any]? }
+        let inbox = Inbox()
+        let center = DistributedNotificationCenter.default()
+        // A private name: a real `state` post would tell listeners the hold is off.
+        let testName = Notification.Name("\(StateBroadcast.stateName.rawValue).selftest.\(getpid())")
+        let token = center.addObserver(forName: testName, object: nil, queue: .main) {
+            inbox.info = $0.userInfo
+        }
+        StateBroadcast.post(.snapshot, .init(active: false, start: nil, end: nil,
+                                             displayOn: false, lidOK: false), name: testName)
+        let deadline = Date().addingTimeInterval(2)
+        while inbox.info == nil && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        center.removeObserver(token)
+        let roundTripOK = inbox.info?["event"] as? String == "snapshot"
+            && inbox.info?["pid"] as? Int == Int(getpid())
+
+        let passed = shapeOK && roundTripOK
+        print("state broadcast: payload=\(shapeOK ? "OK" : "FAIL") round-trip=\(roundTripOK ? "OK" : "FAIL")")
+        return passed
     }
 
     /// Render representative holder combinations across both icon-focus modes
