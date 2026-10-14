@@ -240,6 +240,7 @@ final class AwakeModel {
     }
 
     func deactivate() {
+        StateBroadcast.log.notice("hold stopped")
         endHold(.off)
     }
 
@@ -592,6 +593,7 @@ final class AwakeModel {
         missingSelfHoldStreak += 1
         if missingSelfHoldStreak >= 2 {
             missingSelfHoldStreak = 0
+            StateBroadcast.log.notice("hold ended: our assertion is missing from the read-back")
             endHold(.ended)   // controller.release() tolerates an already-gone id
         }
     }

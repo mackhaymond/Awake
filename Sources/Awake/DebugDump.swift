@@ -90,11 +90,51 @@ enum DebugDump {
         let lidOK = lidEngaged && watchdogAlive && watchdogGone && !lid.isEngaged
         print("lid override: engaged=\(lidEngaged) watchdog=\(watchdogPID.map(String.init) ?? "none") alive=\(watchdogAlive) gone-after=\(watchdogGone) \(lidOK ? "OK" : "FAIL")")
 
+        let reassertOK = lidReassertSelfTest()
         let broadcastOK = broadcastSelfTest()
 
         let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK && lidOK
-            && broadcastOK
+            && reassertOK && broadcastOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
+    }
+
+    /// powerd clears the clamshell bit behind our back (2026-10-13: a display
+    /// change at 22:43 cleared it, the lid closed at 23:17 and the Mac slept).
+    /// A fake kernel plays powerd: the override must put the bit back on its
+    /// backstop and after a trigger, and leave it alone once disengaged.
+    @MainActor
+    private static func lidReassertSelfTest() -> Bool {
+        final class Kernel { var disabled = false; var writes = 0 }
+        let kernel = Kernel()
+        let lid = LidCloseOverride(setDisabled: { kernel.disabled = $0; kernel.writes += 1; return true },
+                                   guardsCrashes: false, reassertInterval: 5, burstDelays: [0.05])
+        let t0 = Date()
+        func spin() { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+
+        let engaged = lid.engage(now: t0) && kernel.disabled
+        kernel.disabled = false                         // powerd: setClamShellSleepDisable(2->0)
+        lid.engage(now: t0.addingTimeInterval(2))
+        let notEarly = !kernel.disabled                 // backstop not due yet
+        lid.engage(now: t0.addingTimeInterval(6))
+        let backstop = kernel.disabled
+
+        kernel.disabled = false
+        lid.systemChanged("self-test")
+        let deferred = !kernel.disabled                 // lands after powerd's write, not before
+        spin()
+        let event = kernel.disabled
+
+        // A burst still pending at disengage must not turn the bit back on.
+        lid.systemChanged("self-test")
+        lid.disengage()
+        let released = !kernel.disabled
+        let writes = kernel.writes
+        spin()
+        let quietAfter = !kernel.disabled && kernel.writes == writes
+
+        let ok = engaged && notEarly && backstop && deferred && event && released && quietAfter
+        print("lid re-assert: backstop=\(notEarly && backstop ? "OK" : "FAIL") event=\(deferred && event ? "OK" : "FAIL") after-disengage=\(released && quietAfter ? "OK" : "FAIL")")
+        return ok
     }
 
     /// State broadcast: the payload keeps to the v1 contract, and a post makes a
