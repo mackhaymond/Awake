@@ -124,6 +124,18 @@ enum DebugDump {
         spin()
         let event = kernel.disabled
 
+        // Noticing the gap: only a clamshell sleep taken while engaged counts.
+        var reported: [Date] = []
+        lid.onLidSleep = { reported.append($0) }
+        lid.willSleep(reason: "Software Sleep")
+        lid.didWake(lastSleepReason: "Software Sleep")       // a sleep the user chose
+        lid.didWake(lastSleepReason: "Clamshell Sleep")      // stale: never saw it go while engaged
+        lid.willSleep(reason: "Clamshell Sleep")             // reported at once…
+        lid.didWake(lastSleepReason: "Clamshell Sleep")      // …and not again on wake
+        lid.willSleep(reason: nil)                           // reason not set yet at willSleep
+        lid.didWake(lastSleepReason: "Clamshell Sleep")      // caught on wake instead
+        let noticed = reported.count == 2
+
         // A burst still pending at disengage must not turn the bit back on.
         lid.systemChanged("self-test")
         lid.disengage()
@@ -131,9 +143,13 @@ enum DebugDump {
         let writes = kernel.writes
         spin()
         let quietAfter = !kernel.disabled && kernel.writes == writes
+        lid.willSleep(reason: "Clamshell Sleep")
+        lid.didWake(lastSleepReason: "Clamshell Sleep")
+        let notNoticedIdle = reported.count == 2
 
         let ok = engaged && notEarly && backstop && deferred && event && released && quietAfter
-        print("lid re-assert: backstop=\(notEarly && backstop ? "OK" : "FAIL") event=\(deferred && event ? "OK" : "FAIL") after-disengage=\(released && quietAfter ? "OK" : "FAIL")")
+            && noticed && notNoticedIdle
+        print("lid re-assert: backstop=\(notEarly && backstop ? "OK" : "FAIL") event=\(deferred && event ? "OK" : "FAIL") after-disengage=\(released && quietAfter ? "OK" : "FAIL") lid-sleep-notice=\(noticed && notNoticedIdle ? "OK" : "FAIL")")
         return ok
     }
 
@@ -157,6 +173,9 @@ enum DebugDump {
                                                             holders: [holder]),
                                            requestID: "r1")
         let idle = StateBroadcast.payload(.snapshot, state(active: false))
+        var sleptState = state(active: false)
+        sleptState.lidSleptAt = Date(timeIntervalSince1970: 500)
+        let slept = StateBroadcast.payload(.snapshot, sleptState)
         let holders = timed["holders"] as? [[String: Any]]
         let shapeOK = timed["v"] as? Int == 1
             && timed["event"] as? String == "extended"
@@ -172,6 +191,7 @@ enum DebugDump {
             && idle["start"] == nil && idle["end"] == nil && idle["preset"] == nil
             && idle["holders"] == nil && idle["youCount"] == nil && idle["requestId"] == nil
             && idle["hotkey"] as? String == "⌃⌥⌘A"
+            && idle["lidSleptAt"] == nil && slept["lidSleptAt"] as? Double == 500
             && PropertyListSerialization.propertyList(timed, isValidFor: .binary)
 
         // Commands: what's accepted, and that malformed input is dropped.

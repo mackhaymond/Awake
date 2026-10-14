@@ -28,8 +28,13 @@ import os
 /// stale), so while engaged we re-assert: a short burst after each of those
 /// triggers, landing after powerd's write, plus a backstop from `engage()`.
 /// What this can't cover: powerd clearing the bit while the lid is ALREADY
-/// closed (e.g. AC or an external display unplugged in clamshell mode) — the
-/// kernel re-evaluates on that write and sleeps before we can answer.
+/// closed (on AC with an external or virtual display attached: AC unplugged,
+/// or the last such display going away — agent-chrome releasing BetterDisplay's
+/// virtual screen does it). In xnu's setClamShellSleepDisable, a closed lid plus
+/// the mask dropping to 0 runs the clamshell evaluation inside powerd's own
+/// call, so the Mac sleeps before anything in user space can answer. Only root's
+/// `pmset disablesleep` vetoes that. What we can do is notice: `onLidSleep`
+/// fires on wake from a clamshell sleep taken while we were engaged.
 @MainActor
 final class LidCloseOverride {
 
@@ -48,6 +53,12 @@ final class LidCloseOverride {
     /// Re-asserts after a trigger. powerd writes ~0.3 s after a display or
     /// power change and ~5 s after wake (kClamshellEvaluateDelay).
     private let burstDelays: [TimeInterval]
+
+    /// A clamshell sleep taken while engaged (the gap above), with when it went.
+    var onLidSleep: ((Date) -> Void)?
+    /// Set at willSleep while engaged; `reported` once onLidSleep fired for it.
+    private var sleptAt: Date?
+    private var reported = false
 
     private var lastAsserted: Date?
     private var burst = 0
@@ -169,9 +180,63 @@ final class LidCloseOverride {
             }
             observers.append((center, token))
         }
+        let sleeping = workspace.addObserver(forName: NSWorkspace.willSleepNotification,
+                                             object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.willSleep(reason: Self.lastSleepReason()) }
+        }
+        let woke = workspace.addObserver(forName: NSWorkspace.didWakeNotification,
+                                         object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didWake(lastSleepReason: Self.lastSleepReason()) }
+        }
+        observers += [(workspace, sleeping), (workspace, woke)]
         notify_register_dispatch(kIOPSNotifyPowerSource, &powerToken, .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.systemChanged("power source change") }
         }
+    }
+
+    // MARK: - Noticing the gap
+
+    private static let clamshellSleep = "Clamshell Sleep"
+
+    /// The kernel names the reason before apps hear about the sleep. A
+    /// clamshell sleep while engaged means powerd cleared the bit with the lid
+    /// already closed — our bit set would have vetoed it. Reported right here:
+    /// on AC this is a DarkWake that can last all night, and a timed hold can
+    /// end (and stop our observers) before any wake.
+    func willSleep(reason: String?) {
+        guard isEngaged else { return }
+        sleptAt = Date()
+        reported = false
+        guard reason == Self.clamshellSleep else { return }
+        let power = PowerStatus.current()
+        Self.log.error("""
+            lid closed and the Mac is sleeping anyway: powerd turned the lid override off \
+            while the lid was closed (a display going away, or AC unplugged) — \
+            onAC=\(power.onAC, privacy: .public) screens=\(NSScreen.screens.count, privacy: .public)
+            """)
+        reported = true
+        onLidSleep?(sleptAt ?? Date())
+    }
+
+    /// Fallback for a reason the kernel hadn't set yet at willSleep. Only a
+    /// sleep we saw go while engaged counts: the reason is stale otherwise.
+    func didWake(lastSleepReason: String?) {
+        defer { sleptAt = nil; reported = false }
+        guard isEngaged, let sleptAt, !reported, lastSleepReason == Self.clamshellSleep else { return }
+        Self.log.error("""
+            woke from a lid-closed sleep the override should have prevented \
+            (asleep since \(sleptAt.formatted(date: .omitted, time: .standard), privacy: .public))
+            """)
+        onLidSleep?(sleptAt)
+    }
+
+    /// IOPMrootDomain's "Last Sleep Reason", e.g. "Clamshell Sleep".
+    nonisolated static func lastSleepReason() -> String? {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != IO_OBJECT_NULL else { return nil }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "Last Sleep Reason" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? String
     }
 
     private func stopWatching() {
@@ -182,6 +247,8 @@ final class LidCloseOverride {
             powerToken = NOTIFY_TOKEN_INVALID
         }
         burst += 1   // drop any pending re-asserts
+        sleptAt = nil
+        reported = false
     }
 
     private func startWatchdog() {

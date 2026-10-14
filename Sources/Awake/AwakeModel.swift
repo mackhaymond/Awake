@@ -135,6 +135,17 @@ final class AwakeModel {
     /// lidOK as last broadcast, so a mid-hold lid-override change posts once.
     private var broadcastLidOK = false
 
+    /// The Mac slept with the lid closed despite the override (see
+    /// LidCloseOverride: powerd turned it off with the lid already shut).
+    /// Shown in the menu and broadcast until the next hold or a dismiss.
+    private(set) var lidSleptAt: Date?
+
+    func dismissLidSleep() {
+        guard lidSleptAt != nil else { return }
+        lidSleptAt = nil
+        broadcast(.snapshot)
+    }
+
     /// Answers `com.mackhaymond.Awake.query` with a snapshot.
     private var queryListener: StateBroadcast.Listener?
 
@@ -145,6 +156,11 @@ final class AwakeModel {
         hasLaunched = true
 
         LidCloseOverride.resetIfLeftEngaged()
+        lidOverride.onLidSleep = { [weak self] sleptAt in
+            guard let self else { return }
+            lidSleptAt = sleptAt
+            broadcast(.snapshot)
+        }
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         installHotKey(from: prefs.hotKey)
         loginItem.refresh()
@@ -232,7 +248,10 @@ final class AwakeModel {
 
     /// Shared tail of activate()/activateCustom(), once the assertions exist.
     private func holdStarted(wasActive: Bool, event: StateBroadcast.Event?) {
-        if !wasActive { holdStart = Date() }
+        if !wasActive {
+            holdStart = Date()
+            lidSleptAt = nil
+        }
         syncLidOverride(recheckPower: true, announce: false)
         broadcast(event ?? (wasActive ? .extended : .on))
         refresh()
@@ -286,7 +305,8 @@ final class AwakeModel {
             onAC: power.onAC,
             battery: power.batteryPercent,
             holders: holders,
-            youCount: holders == nil ? nil : ownCaffeinateRows.count
+            youCount: holders == nil ? nil : ownCaffeinateRows.count,
+            lidSleptAt: lidSleptAt
         )
         broadcastLidOK = lidOK
         if let holders {

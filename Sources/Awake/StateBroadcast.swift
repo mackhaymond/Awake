@@ -60,6 +60,10 @@ enum StateBroadcast {
         var holders: [Holder]?
         /// The menu's "Stop N Commands" count; sent alongside `holders`.
         var youCount: Int?
+        /// When the Mac went to sleep with the lid closed despite the lid
+        /// override (powerd turned it off with the lid already shut). Present
+        /// until the next hold starts or the user dismisses it.
+        var lidSleptAt: Date? = nil
     }
 
     /// One row of the menu's "Keeping your Mac awake" list, minus our own hold.
@@ -141,6 +145,7 @@ enum StateBroadcast {
         if let battery = state.battery { info["battery"] = battery }
         if let holders = state.holders { info["holders"] = holders.map(\.plist) }
         if let youCount = state.youCount { info["youCount"] = youCount }
+        if let lidSleptAt = state.lidSleptAt { info["lidSleptAt"] = lidSleptAt.timeIntervalSince1970 }
         if let requestID { info["requestId"] = requestID }
         return info
     }

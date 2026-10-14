@@ -27,6 +27,7 @@ struct MenuContentView: View {
                 masterToggle
                 displayToggle
                 countdown
+                lidSleepNotice
                 timedControls
             }
             Divider()
@@ -190,6 +191,38 @@ struct MenuContentView: View {
                     .tint(.red)
                     .controlSize(.small)
                     .accessibilityLabel("Stop keeping your Mac awake")
+            }
+        }
+    }
+
+    // MARK: - Lid-closed sleep notice
+
+    /// The one case "Stay awake with lid closed" can't hold: macOS turned it
+    /// off while the lid was already shut. Say so instead of failing silently.
+    @ViewBuilder
+    private var lidSleepNotice: some View {
+        if let slept = model.lidSleptAt {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Slept with the lid closed at \(slept.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    Text("A display or the charger was disconnected while the lid was shut, and macOS turned the lid setting off.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    model.dismissLidSleep()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .accessibilityLabel("Dismiss")
             }
         }
     }
