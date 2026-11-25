@@ -29,6 +29,7 @@ enum AppIdentityResolver {
         "com.apple.finder": "Finder",
         "com.google.Chrome": "Google Chrome",
         "company.thebrowser.Browser": "Arc",
+        "app.zen-browser.zen": "Zen",
         "com.openai.chat": "ChatGPT",
         "com.spotify.client": "Spotify",
         "com.tinyspeck.slackmacgap": "Slack",

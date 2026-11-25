@@ -8,7 +8,7 @@ enum AssertionClassifier {
     ]
 
     private static let knownBrowsers: Set<String> = [
-        "Arc", "Google Chrome", "Chrome", "Safari", "Microsoft Edge",
+        "Arc", "Zen", "Google Chrome", "Chrome", "Safari", "Microsoft Edge",
         "Firefox", "Brave Browser", "Opera", "Vivaldi",
     ]
 
