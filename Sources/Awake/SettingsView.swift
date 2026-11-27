@@ -126,7 +126,7 @@ struct SettingsView: View {
             } header: {
                 Text("Shortcut")
             } footer: {
-                Text("Works from any app; no Accessibility permission required.")
+                Text("Works from any app; no Accessibility permission required. Press it twice quickly to turn Keep the Display Awake on or off; with nothing on, that starts a session with the display awake.")
             }
         }
         .formStyle(.grouped)

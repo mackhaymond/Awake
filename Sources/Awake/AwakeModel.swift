@@ -161,6 +161,11 @@ final class AwakeModel {
             lidSleptAt = sleptAt
             broadcast(.snapshot)
         }
+        // A double-tap hold the last run never got to end (crash, SIGKILL).
+        if let before = UserDefaults.standard.object(forKey: Self.screenHoldRestoreKey) as? Bool {
+            prefs.ourHoldBlocksDisplay = before
+            UserDefaults.standard.removeObject(forKey: Self.screenHoldRestoreKey)
+        }
         controller.blocksDisplay = prefs.ourHoldBlocksDisplay
         installHotKey(from: prefs.hotKey)
         loginItem.refresh()
@@ -183,6 +188,7 @@ final class AwakeModel {
         let wasActive = isActive
         controller.invalidate()
         lidOverride.disengage()
+        restoreDisplayPrefAfterScreenHold()
         // A `quit` command gets its `off` reply even from idle.
         if wasActive || commandID != nil {
             isActive = false
@@ -205,6 +211,55 @@ final class AwakeModel {
         } else {
             activate(duration: prefs.defaultDuration)
         }
+    }
+
+    /// "Keep the display awake" as it was before a double tap started the
+    /// running hold, to put back when that hold ends. nil when the running
+    /// hold wasn't started that way, or the setting was changed since (an
+    /// explicit choice stands).
+    /// Kept on disk too, so a crash or SIGKILL mid-hold doesn't leave the
+    /// setting stuck on: the next launch puts it back.
+    private var displayPrefBeforeScreenHold: Bool? {
+        didSet {
+            if let v = displayPrefBeforeScreenHold {
+                UserDefaults.standard.set(v, forKey: Self.screenHoldRestoreKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.screenHoldRestoreKey)
+            }
+        }
+    }
+    private static let screenHoldRestoreKey = "awake.displayPrefBeforeScreenHold"
+
+    /// The hotkey's double tap: the screen part, on or off on its own.
+    /// - Holding: flips "Keep the display awake" on the live hold (and keeps
+    ///   it, as the menu's switch does). A hold the double tap started ends.
+    /// - Idle: starts the default hold with the screen on; the setting goes
+    ///   back to what it was when that hold ends.
+    func toggleScreen() {
+        if isActive {
+            if displayPrefBeforeScreenHold != nil {
+                deactivate()   // endHold puts the setting back
+            } else {
+                setDisplayHold(!prefs.ourHoldBlocksDisplay)
+            }
+            return
+        }
+        let before = prefs.ourHoldBlocksDisplay
+        prefs.ourHoldBlocksDisplay = true
+        activate(duration: prefs.defaultDuration)
+        if isActive {
+            displayPrefBeforeScreenHold = before
+        } else {
+            prefs.ourHoldBlocksDisplay = before
+        }
+    }
+
+    /// Put "Keep the display awake" back after a double-tap hold.
+    private func restoreDisplayPrefAfterScreenHold() {
+        guard let before = displayPrefBeforeScreenHold else { return }
+        displayPrefBeforeScreenHold = nil
+        prefs.ourHoldBlocksDisplay = before
+        controller.blocksDisplay = before
     }
 
     /// `event` overrides what's broadcast; by default `on` from idle and
@@ -268,6 +323,7 @@ final class AwakeModel {
     private func endHold(_ event: StateBroadcast.Event) {
         controller.release()
         lidOverride.disengage()
+        restoreDisplayPrefAfterScreenHold()
         isActive = false
         activeDuration = nil
         remaining = nil
@@ -353,6 +409,9 @@ final class AwakeModel {
     /// effect (no double re-creation of the assertion when both are on screen).
     /// Idle, there's no re-create to announce it, so post a snapshot directly.
     func setDisplayHold(_ value: Bool) {
+        // Chosen outright (menu, Settings, the notch, a double tap on a hold
+        // it didn't start): it stands after this hold too.
+        displayPrefBeforeScreenHold = nil
         guard prefs.ourHoldBlocksDisplay != value else { return }
         prefs.ourHoldBlocksDisplay = value
         if isActive {
@@ -491,7 +550,8 @@ final class AwakeModel {
         // disabling the hotkey entirely.
         let candidate = GlobalHotKey(
             keyCode: combo.keyCode,
-            carbonModifiers: combo.carbonModifiers
+            carbonModifiers: combo.carbonModifiers,
+            onDoubleTap: { [weak self] in self?.toggleScreen() }
         ) { [weak self] in
             self?.toggle()
         }

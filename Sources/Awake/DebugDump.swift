@@ -92,10 +92,81 @@ enum DebugDump {
 
         let reassertOK = lidReassertSelfTest()
         let broadcastOK = broadcastSelfTest()
+        let tapsOK = tapSequencerSelfTest()
 
         let passed = ok && holdsLidClosed && selfRows.count == 1 && after == 0 && migrationOK && lidOK
-            && reassertOK && broadcastOK
+            && reassertOK && broadcastOK && tapsOK
         print("\nSELF-TEST: \(passed ? "PASS ✅" : "FAIL ❌")")
+    }
+
+    /// The hotkey's single vs double tap (TapSequencer), on made-up times.
+    private static func tapSequencerSelfTest() -> Bool {
+        let w = TapSequencer.window
+        var results: [String: Bool] = [:]
+
+        // One press, its wait runs out: a single.
+        var s = TapSequencer()
+        if case .waitForSecond(let g, _) = s.press(at: 10) {
+            s.release()
+            results["single"] = s.expire(generation: g)
+        }
+
+        // Two quick taps: a double, and the first press's wait is void.
+        s = TapSequencer()
+        if case .waitForSecond(let g, _) = s.press(at: 10) {
+            s.release()
+            let second = s.press(at: 10 + w * 0.5)
+            s.release()
+            results["double"] = second == .double && !s.expire(generation: g)
+        }
+
+        // Two taps slower than the window: two singles.
+        s = TapSequencer()
+        if case .waitForSecond(let g1, _) = s.press(at: 10) {
+            s.release()
+            let fired1 = s.expire(generation: g1)
+            if case .waitForSecond(let g2, _) = s.press(at: 10 + w + 0.05) {
+                s.release()
+                results["slow"] = fired1 && s.expire(generation: g2)
+            }
+        }
+
+        // Held key: auto-repeat presses are dropped, then a single.
+        s = TapSequencer()
+        if case .waitForSecond(let g, _) = s.press(at: 10) {
+            let r1 = s.press(at: 10.05), r2 = s.press(at: 10.1)
+            s.release()
+            results["repeat"] = r1 == .ignore && r2 == .ignore && s.expire(generation: g)
+        }
+
+        // A lost release must not deaden the key: a press long after counts.
+        s = TapSequencer()
+        _ = s.press(at: 10)
+        if case .waitForSecond = s.press(at: 10 + TapSequencer.staleDown + 1) {
+            results["lost-release"] = true
+        }
+
+        // Three quick taps: a double, then a single starts waiting.
+        s = TapSequencer()
+        _ = s.press(at: 10); s.release()
+        let d = s.press(at: 10.1); s.release()
+        if case .waitForSecond = s.press(at: 10.2), d == .double { results["triple"] = true }
+
+        // A busy main thread: the first press's timer hasn't run when a slow
+        // second press lands. The first is flushed as a single, never lost.
+        s = TapSequencer()
+        if case .waitForSecond(let g1, false) = s.press(at: 10) {
+            s.release()
+            if case .waitForSecond(let g2, true) = s.press(at: 10 + w + 0.2) {
+                s.release()
+                results["late-timer"] = !s.expire(generation: g1) && s.expire(generation: g2)
+            }
+        }
+
+        let names = ["single", "double", "slow", "repeat", "lost-release", "triple", "late-timer"]
+        let ok = names.allSatisfy { results[$0] == true }
+        print("hotkey taps: " + names.map { "\($0)=\(results[$0] == true ? "OK" : "FAIL")" }.joined(separator: " "))
+        return ok
     }
 
     /// powerd clears the clamshell bit behind our back (2026-10-13: a display
