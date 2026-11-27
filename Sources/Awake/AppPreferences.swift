@@ -36,6 +36,11 @@ final class AppPreferences {
         didSet { hotKey.save() }
     }
 
+    /// Turns "Keep the display awake" on or off on its own (AwakeModel.toggleScreen).
+    var screenHotKey: KeyComboStore {
+        didSet { screenHotKey.save(key: KeyComboStore.screenDefaultsKey) }
+    }
+
     var defaultDuration: TimerDuration {
         didSet {
             UserDefaults.standard.set(defaultDuration.rawValue, forKey: Keys.defaultDuration)
@@ -272,6 +277,8 @@ final class AppPreferences {
         let defaults = UserDefaults.standard
 
         self.hotKey = KeyComboStore.load()
+        self.screenHotKey = KeyComboStore.load(key: KeyComboStore.screenDefaultsKey,
+                                               fallback: .screenDefault)
 
         if defaults.object(forKey: Keys.defaultDuration) != nil {
             let raw = defaults.integer(forKey: Keys.defaultDuration)

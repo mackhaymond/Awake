@@ -22,19 +22,11 @@ final class GlobalHotKey {
     private let hotKeyID: UInt32
     private var hotKeyRef: EventHotKeyRef?
     private let handler: () -> Void
-    private let doubleTapHandler: (() -> Void)?
-    private var taps = TapSequencer()
 
-    /// With `onDoubleTap`, a single press waits `TapSequencer.window` for a
-    /// second one before it runs `handler`; two quick presses run only
-    /// `onDoubleTap`. Without it, a press runs `handler` at once.
-    init?(keyCode: UInt32, carbonModifiers: UInt32,
-          onDoubleTap: (() -> Void)? = nil,
-          handler: @escaping () -> Void) {
+    init?(keyCode: UInt32, carbonModifiers: UInt32, handler: @escaping () -> Void) {
         self.hotKeyID = GlobalHotKey.nextID
         GlobalHotKey.nextID += 1
         self.handler = handler
-        self.doubleTapHandler = onDoubleTap
 
         GlobalHotKey.installEventHandlerIfNeeded()
 
@@ -61,36 +53,8 @@ final class GlobalHotKey {
         GlobalHotKey.registry[hotKeyID] = nil
     }
 
-    /// `at`: when the key went down (the event's own time, seconds since
-    /// boot), not when the main thread got to it - a stalled main thread
-    /// must not squeeze two slow presses into a double tap.
-    fileprivate func pressed(at time: TimeInterval) {
-        switch taps.press(at: time) {
-        case .ignore:
-            return
-        case .double:
-            doubleTapHandler?()
-        case .waitForSecond(let generation, let flushSingle):
-            // The previous press's wait ran out but its timer hasn't run
-            // yet (a busy main thread): it was a single, so it runs first.
-            if flushSingle { handler() }
-            guard doubleTapHandler != nil else {
-                _ = taps.expire(generation: generation)
-                handler()
-                return
-            }
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(TapSequencer.window))
-                // Gone with the hotkey: a rebind or quit drops a pending tap.
-                guard let self, self.hotKeyRef != nil,
-                      self.taps.expire(generation: generation) else { return }
-                self.handler()
-            }
-        }
-    }
-
-    fileprivate func released() {
-        taps.release()
+    fileprivate func fire() {
+        handler()
     }
 
     // MARK: - Shared Carbon event handler
@@ -98,14 +62,10 @@ final class GlobalHotKey {
     private static func installEventHandlerIfNeeded() {
         guard eventHandler == nil else { return }
 
-        // Releases too: a press only counts as a new tap after the key came
-        // up, so a held key's auto-repeat never reads as a double tap.
-        var eventTypes = [
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                          eventKind: UInt32(kEventHotKeyPressed)),
-            EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                          eventKind: UInt32(kEventHotKeyReleased)),
-        ]
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
 
         let callback: EventHandlerUPP = { _, eventRef, _ -> OSStatus in
             guard let eventRef else { return noErr }
@@ -121,17 +81,9 @@ final class GlobalHotKey {
             )
             guard err == noErr else { return noErr }
             let id = hkID.id
-            let isPress = GetEventKind(eventRef) == UInt32(kEventHotKeyPressed)
-            // Seconds since boot, the base of ProcessInfo.systemUptime.
-            let eventTime = GetEventTime(eventRef)
-            let time = eventTime > 0 ? eventTime : ProcessInfo.processInfo.systemUptime
             // @convention(c) context — hop to the main actor.
             DispatchQueue.main.async {
-                if isPress {
-                    GlobalHotKey.registry[id]?.pressed(at: time)
-                } else {
-                    GlobalHotKey.registry[id]?.released()
-                }
+                GlobalHotKey.registry[id]?.fire()
             }
             return noErr
         }
@@ -139,69 +91,11 @@ final class GlobalHotKey {
         InstallEventHandler(
             GetEventDispatcherTarget(),
             callback,
-            eventTypes.count,
-            &eventTypes,
+            1,
+            &eventType,
             nil,
             &eventHandler
         )
-    }
-}
-
-// MARK: - Single vs double tap
-
-/// Tells a single press of the hotkey from a quick double tap, and drops a
-/// held key's auto-repeat. Pure (times come in as arguments) so `--selftest`
-/// can drive it.
-struct TapSequencer {
-    /// Press to press: a second press within this is a double tap. It is also
-    /// how long a single press waits before it runs.
-    static let window: TimeInterval = 0.3
-    /// A press while the key is still down is auto-repeat, unless the last
-    /// press was this long ago: then its release was lost (the first repeat
-    /// comes after the system's key-repeat delay), and the key must not stay
-    /// dead for longer than that.
-    static var staleDown: TimeInterval { max(0.35, NSEvent.keyRepeatDelay + 0.15) }
-
-    enum Step: Equatable {
-        case ignore
-        /// Wait `window` for a second press. `flushSingle`: the previous
-        /// press's wait had already run out, so it is a single, due now.
-        case waitForSecond(generation: Int, flushSingle: Bool)
-        case double
-    }
-
-    private(set) var down = false
-    private var lastPress: TimeInterval = -.infinity
-    private var waitingSince: TimeInterval?
-    private(set) var generation = 0
-    private let staleDown: TimeInterval
-
-    init(staleDown: TimeInterval = TapSequencer.staleDown) {
-        self.staleDown = staleDown
-    }
-
-    mutating func press(at t: TimeInterval) -> Step {
-        defer { lastPress = t }
-        if down && t - lastPress < staleDown { return .ignore }
-        down = true
-        generation += 1   // any pending wait is settled here
-        if let since = waitingSince, t - since <= Self.window {
-            waitingSince = nil
-            return .double
-        }
-        let flush = waitingSince != nil
-        waitingSince = t
-        return .waitForSecond(generation: generation, flushSingle: flush)
-    }
-
-    mutating func release() { down = false }
-
-    /// The wait after press `generation` ran out: true when that press stands
-    /// as a single tap (no second press came, nothing newer replaced it).
-    mutating func expire(generation g: Int) -> Bool {
-        guard g == generation, waitingSince != nil else { return false }
-        waitingSince = nil
-        return true
     }
 }
 

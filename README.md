@@ -104,13 +104,11 @@ Render the current settings' states to a PNG: `Awake.app/Contents/MacOS/Awake --
   does). On battery it hands the lid back below a charge floor (default 20%). A
   watchdog process resets clamshell sleep if Awake crashes or is killed.
 - **Global hotkey** to toggle from anywhere — default **⌃⌥⌘A** — rebindable in Settings
-  (Carbon `RegisterEventHotKey`; no Accessibility permission needed). **Double-tap it**
-  (two presses within 0.3 s) to flip *Keep the display awake* on its own: on a running
+  (Carbon `RegisterEventHotKey`; no Accessibility permission needed). A second
+  shortcut, default **⌃⌥⌘D**, flips *Keep the display awake* on its own: on a running
   hold it switches the display part over at once and keeps the setting; with nothing
-  running it starts the default hold with the display on, and the next double tap (or
-  the hold ending any other way) stops it and puts the setting back. A single press
-  waits out those 0.3 s before it toggles; a held key's auto-repeat never counts as a
-  second tap.
+  running it starts the default hold with the display on, and pressing it again (or
+  the hold ending any other way) stops it and puts the setting back.
 - **Stop Terminal Commands** — sends SIGTERM to the stray `caffeinate` processes
   you started in a terminal.
 - **Launch at login** via `SMAppService` (toggle in Settings).

@@ -306,16 +306,24 @@ struct KeyComboStore: Codable, Equatable, Sendable {
         carbonModifiers: UInt32(cmdKey | optionKey | controlKey) // ⌃⌥⌘ = 256|2048|4096
     )
 
-    static func load() -> KeyComboStore {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+    /// The second shortcut: "Keep the display awake" on its own (⌃⌥⌘D).
+    static let screenDefaultsKey = "awake.screenHotkey"
+
+    static let screenDefault = KeyComboStore(
+        keyCode: UInt32(kVK_ANSI_D),
+        carbonModifiers: UInt32(cmdKey | optionKey | controlKey)
+    )
+
+    static func load(key: String = defaultsKey, fallback: KeyComboStore = .default) -> KeyComboStore {
+        guard let data = UserDefaults.standard.data(forKey: key),
               let combo = try? JSONDecoder().decode(KeyComboStore.self, from: data)
-        else { return .default }
+        else { return fallback }
         return combo
     }
 
-    func save() {
+    func save(key: String = KeyComboStore.defaultsKey) {
         if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: KeyComboStore.defaultsKey)
+            UserDefaults.standard.set(data, forKey: key)
         }
     }
 

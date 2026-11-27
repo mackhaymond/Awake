@@ -5,6 +5,7 @@ import Carbon.HIToolbox
 struct SettingsView: View {
     @Bindable var model: AwakeModel
     @State private var isRecording = false
+    @State private var isRecordingScreen = false
 
     var body: some View {
         TabView(selection: $model.prefs.settingsTab) {
@@ -116,17 +117,36 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
                 HStack {
+                    Text("Toggle Display Awake")
                     Spacer()
-                    Button("Reset to Default (⌃⌥⌘A)") {
+                    KeyRecorder(
+                        combo: $model.prefs.screenHotKey,
+                        isRecording: $isRecordingScreen,
+                        onChange: { combo in
+                            model.installScreenHotKey(from: combo)
+                        }
+                    )
+                    .frame(width: 140, height: 24)
+                }
+                if model.screenHotKeyUnavailable {
+                    Text("Shortcut unavailable — try another combo.")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                HStack {
+                    Spacer()
+                    Button("Reset to Defaults (⌃⌥⌘A, ⌃⌥⌘D)") {
                         model.prefs.hotKey = .default
+                        model.prefs.screenHotKey = .screenDefault
                         model.installHotKey(from: .default)
+                        model.installScreenHotKey(from: .screenDefault)
                     }
                     .buttonStyle(.borderless)
                 }
             } header: {
-                Text("Shortcut")
+                Text("Shortcuts")
             } footer: {
-                Text("Works from any app; no Accessibility permission required. Press it twice quickly to turn Keep the Display Awake on or off; with nothing on, that starts a session with the display awake.")
+                Text("Work from any app; no Accessibility permission required. Toggle Display Awake turns Keep the Display Awake on or off for the running session; with nothing on, it starts a session with the display awake, and pressing it again ends that session.")
             }
         }
         .formStyle(.grouped)
